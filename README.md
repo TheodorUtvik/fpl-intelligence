@@ -89,7 +89,7 @@ pip install -r requirements.txt
 ## Roadmap
 
 - [x] Phase 1 — Environment and project setup
-- [ ] Phase 2 — Data collection (FPL API + Understat)
+- [x] Phase 2 — Data collection (FPL API + Understat)
 - [ ] Phase 3 — Feature engineering
 - [ ] Phase 4 — Modelling (XGBoost + SHAP)
 - [ ] Phase 5 — Hyperparameter tuning (Optuna)
