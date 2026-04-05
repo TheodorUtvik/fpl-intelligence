@@ -1,7 +1,6 @@
 # Data collection
 requests
-aiohttp
-understat
+aiohttp>=3.9.0
 rapidfuzz
 
 # Data processing
