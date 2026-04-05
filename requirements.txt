@@ -1,0 +1,28 @@
+# Data collection
+requests
+aiohttp
+understat
+rapidfuzz
+
+# Data processing
+pandas
+numpy
+pyarrow
+
+# Machine learning
+xgboost
+scikit-learn
+shap
+optuna
+
+# Optimisation
+pulp
+
+# Visualisation & dashboard
+dash
+dash-bootstrap-components
+plotly
+mplsoccer
+
+# Deployment
+gunicorn
