@@ -9,8 +9,9 @@ data/raw/*.parquet
 data/processed/*.parquet
 
 # Model artefacts
-*.pkl
-*.joblib
+models/*.json
+models/*.pkl
+models/*.png
 best_params.json
 
 # Jupyter checkpoints
