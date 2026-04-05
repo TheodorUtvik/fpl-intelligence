@@ -156,6 +156,132 @@ class FPLOptimizer:
         }
 
     # ------------------------------------------------------------------
+    # Starting XI selection
+    # ------------------------------------------------------------------
+
+    def select_starting_xi(
+        self,
+        players_df: pd.DataFrame,
+        budget: Optional[float] = None,
+    ) -> dict:
+        """
+        Select the optimal starting 11 using ILP.
+
+        Formation constraints (standard FPL rules):
+            - Exactly 1 GKP
+            - 3–5 DEF
+            - 2–5 MID
+            - 1–3 FWD
+            - Total = 11
+
+        Parameters
+        ----------
+        players_df : pd.DataFrame
+            Must contain: player_id, web_name, position, team,
+            now_cost (£m), predicted_pts.
+        budget : float, optional
+            Override the instance budget.
+
+        Returns
+        -------
+        dict with keys:
+            xi          : pd.DataFrame — selected 11 players
+            captain     : str
+            vice_captain: str
+            formation   : str          — e.g. '4-4-2'
+            predicted_total : float    — total predicted pts (with captain)
+            status      : str
+        """
+        budget = budget or self.budget
+        df = players_df.copy().reset_index(drop=True)
+        players = df.index.tolist()
+
+        prob = LpProblem("FPL_XI_Selection", LpMaximize)
+
+        x = {p: LpVariable(f"x_{p}", cat=LpBinary) for p in players}
+        c = {p: LpVariable(f"c_{p}", cat=LpBinary) for p in players}
+
+        # Objective: predicted pts, captain counts double
+        prob += lpSum(
+            df.loc[p, 'predicted_pts'] * x[p] + df.loc[p, 'predicted_pts'] * c[p]
+            for p in players
+        )
+
+        # Budget
+        prob += lpSum(df.loc[p, 'now_cost'] * x[p] for p in players) <= budget
+
+        # Exactly 11 players
+        prob += lpSum(x[p] for p in players) == STARTING_XI
+
+        # Position constraints
+        gkp = df[df['position'] == 'GKP'].index.tolist()
+        def_ = df[df['position'] == 'DEF'].index.tolist()
+        mid = df[df['position'] == 'MID'].index.tolist()
+        fwd = df[df['position'] == 'FWD'].index.tolist()
+
+        prob += lpSum(x[p] for p in gkp) == 1
+        prob += lpSum(x[p] for p in def_) >= 3
+        prob += lpSum(x[p] for p in def_) <= 5
+        prob += lpSum(x[p] for p in mid) >= 2
+        prob += lpSum(x[p] for p in mid) <= 5
+        prob += lpSum(x[p] for p in fwd) >= 1
+        prob += lpSum(x[p] for p in fwd) <= 3
+
+        # Max 3 per club
+        for team_id in df['team'].unique():
+            team_players = df[df['team'] == team_id].index.tolist()
+            prob += lpSum(x[p] for p in team_players) <= MAX_PER_CLUB
+
+        # Exactly one captain, must be in XI
+        prob += lpSum(c[p] for p in players) == 1
+        for p in players:
+            prob += c[p] <= x[p]
+
+        prob.solve(PULP_CBC_CMD(msg=0))
+        status = prob.status
+
+        if status != 1:
+            logger.error("LP solver returned non-optimal status (XI).")
+            return {'status': 'Infeasible', 'xi': pd.DataFrame()}
+
+        selected = [p for p in players if value(x[p]) > 0.5]
+        captain_idx = next(p for p in players if value(c[p]) > 0.5)
+
+        xi_df = df.loc[selected].copy()
+        xi_df['is_captain'] = xi_df.index == captain_idx
+
+        non_cap = xi_df[~xi_df['is_captain']].sort_values('predicted_pts', ascending=False)
+        vc_name = non_cap.iloc[0]['web_name']
+
+        # Derive formation string (DEF-MID-FWD)
+        n_def = (xi_df['position'] == 'DEF').sum()
+        n_mid = (xi_df['position'] == 'MID').sum()
+        n_fwd = (xi_df['position'] == 'FWD').sum()
+        formation = f"{n_def}-{n_mid}-{n_fwd}"
+
+        pos_order = {'GKP': 0, 'DEF': 1, 'MID': 2, 'FWD': 3}
+        xi_df['pos_order'] = xi_df['position'].map(pos_order)
+        xi_df = xi_df.sort_values(['pos_order', 'predicted_pts'], ascending=[True, False])
+        xi_df = xi_df.drop(columns=['pos_order'])
+
+        total_pts = sum(
+            df.loc[p, 'predicted_pts'] * (2 if p == captain_idx else 1)
+            for p in selected
+        )
+
+        logger.info(f"Optimal XI found. Formation: {formation}. Predicted total: {total_pts:.1f} pts")
+
+        return {
+            'xi':              xi_df.reset_index(drop=True),
+            'captain':         df.loc[captain_idx, 'web_name'],
+            'vice_captain':    vc_name,
+            'formation':       formation,
+            'predicted_total': round(total_pts, 2),
+            'total_cost':      round(xi_df['now_cost'].sum(), 1),
+            'status':          'Optimal',
+        }
+
+    # ------------------------------------------------------------------
     # Transfer advisor
     # ------------------------------------------------------------------
 
