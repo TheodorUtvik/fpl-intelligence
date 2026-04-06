@@ -35,29 +35,25 @@ def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figur
         plot_bgcolor=PITCH,
         paper_bgcolor="#1a1a2e",
         margin={"t": 10, "b": 10, "l": 10, "r": 10},
-        height=520,
+        height=540,
         showlegend=False,
     )
 
     # Pitch markings
-    # Outline
-    fig.add_shape(type="rect", x0=0.04, y0=0.02, x1=0.96, y1=0.98,
+    fig.add_shape(type="rect", x0=0.04, y0=0.03, x1=0.96, y1=0.97,
                   line={"color": "white", "width": 2})
-    # Halfway line
     fig.add_shape(type="line", x0=0.04, y0=0.5, x1=0.96, y1=0.5,
                   line={"color": "white", "width": 1.5})
-    # Centre circle
     fig.add_shape(type="circle", x0=0.42, y0=0.43, x1=0.58, y1=0.57,
                   line={"color": "white", "width": 1.5})
 
-    # Row positions: GKP bottom, then DEF, MID, FWD top
-    row_y = {"GKP": 0.1, "DEF": 0.33, "MID": 0.58, "FWD": 0.82}
+    # Row y positions — kept away from pitch edges so labels don't overlap outline
+    row_y = {"GKP": 0.13, "DEF": 0.35, "MID": 0.60, "FWD": 0.84}
 
-    # X spread per row size — tighter for fewer players, like the FPL app
     def row_xs(n: int) -> list:
         if n == 1:
             return [0.5]
-        spacing = {2: (0.3, 0.7), 3: (0.2, 0.8), 4: (0.14, 0.86), 5: (0.1, 0.9)}
+        spacing = {2: (0.3, 0.7), 3: (0.2, 0.8), 4: (0.15, 0.85), 5: (0.1, 0.9)}
         lo, hi = spacing.get(n, (0.1, 0.9))
         return list(np.linspace(lo, hi, n))
 
@@ -72,52 +68,45 @@ def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figur
             name      = player["web_name"]
             pts       = player["predicted_pts"]
             cost      = player["now_cost"]
-            team_name = player.get("team_name", "")
+            team_name = str(player.get("team_name", ""))
             color     = POS_COLOUR[pos]
             x         = xs[i]
 
-            badge = ""
-            if name == captain_name:
-                badge = " (C)"
-            elif name == vice_name:
-                badge = " (V)"
+            badge = " (C)" if name == captain_name else (" (V)" if name == vice_name else "")
+
+            # Truncate long names so labels don't overflow into neighbours
+            display_name = name if len(name) <= 11 else name[:10] + "."
 
             # Player dot
             fig.add_trace(go.Scatter(
                 x=[x], y=[y],
                 mode="markers",
-                marker={"size": 32, "color": color, "line": {"color": "white", "width": 2}},
+                marker={"size": 30, "color": color, "line": {"color": "white", "width": 2}},
                 hovertemplate=(
-                    f"<b>{name}</b><br>"
+                    f"<b>{name}{badge}</b><br>"
                     f"Pred: {pts:.2f} pts<br>"
                     f"Cost: £{cost:.1f}m<extra></extra>"
                 ),
             ))
 
-            # Name + captain badge above dot
+            # Name label — sits just above the dot, no background box to avoid clipping
             fig.add_annotation(
-                x=x, y=y + 0.068,
-                text=f"<b>{name}{badge}</b>",
+                x=x, y=y + 0.055,
+                text=f"<b>{display_name}{badge}</b>",
                 showarrow=False,
-                font={"color": TEXT, "size": 9},
-                bgcolor="rgba(0,0,0,0.55)",
+                font={"color": TEXT, "size": 8.5},
+                bgcolor="rgba(0,0,0,0.6)",
                 borderpad=2,
+                yanchor="bottom",
             )
 
-            # Team name below dot
+            # Team · pts on a single line below the dot
             fig.add_annotation(
-                x=x, y=y - 0.058,
-                text=f"{team_name}",
+                x=x, y=y - 0.055,
+                text=f"{team_name}  {pts:.1f}pts",
                 showarrow=False,
-                font={"color": "#ccc", "size": 8},
-            )
-
-            # Points further below
-            fig.add_annotation(
-                x=x, y=y - 0.095,
-                text=f"{pts:.1f}pts",
-                showarrow=False,
-                font={"color": "#aaa", "size": 8},
+                font={"color": "#ddd", "size": 8},
+                yanchor="top",
             )
 
     return fig
