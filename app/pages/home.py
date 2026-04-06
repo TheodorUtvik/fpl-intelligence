@@ -74,7 +74,7 @@ def _avg_pts_by_position(players_df) -> go.Figure:
         x=pos_stats.index.tolist(),
         y=pos_stats.values.round(2),
         marker_color=[ORANGE, BLUE, GREEN, RED],
-        text=pos_stats.values.round(2),
+        text=[f"{v:.2f}" for v in pos_stats.values],
         textposition="outside",
         textfont={"color": TEXT},
     ))
@@ -119,7 +119,8 @@ def layout():
 
     n_total  = len(players)
     n_avail  = len(get_available_players())
-    xg_cov   = (players["rolling_xg_3gw"] > 0).mean()
+    played   = players[players["rolling_pts_3gw"] > 0]
+    xg_cov   = (played["rolling_xg_3gw"] > 0).mean() if len(played) > 0 else 0
     top_pick = players.sort_values("predicted_pts", ascending=False).iloc[0]
 
     return dbc.Container([

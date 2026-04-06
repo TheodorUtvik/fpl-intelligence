@@ -51,21 +51,30 @@ def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figur
                   line={"color": "white", "width": 1.5})
 
     # Row positions: GKP bottom, then DEF, MID, FWD top
-    row_y = {"GKP": 0.1, "DEF": 0.32, "MID": 0.58, "FWD": 0.82}
+    row_y = {"GKP": 0.1, "DEF": 0.33, "MID": 0.58, "FWD": 0.82}
+
+    # X spread per row size — tighter for fewer players, like the FPL app
+    def row_xs(n: int) -> list:
+        if n == 1:
+            return [0.5]
+        spacing = {2: (0.3, 0.7), 3: (0.2, 0.8), 4: (0.14, 0.86), 5: (0.1, 0.9)}
+        lo, hi = spacing.get(n, (0.1, 0.9))
+        return list(np.linspace(lo, hi, n))
 
     for pos, y in row_y.items():
         pos_players = squad_df[squad_df["position"] == pos].reset_index(drop=True)
         n = len(pos_players)
         if n == 0:
             continue
-        xs = np.linspace(0.12, 0.88, n)
+        xs = row_xs(n)
 
         for i, (_, player) in enumerate(pos_players.iterrows()):
-            name  = player["web_name"]
-            pts   = player["predicted_pts"]
-            cost  = player["now_cost"]
-            color = POS_COLOUR[pos]
-            x     = xs[i]
+            name      = player["web_name"]
+            pts       = player["predicted_pts"]
+            cost      = player["now_cost"]
+            team_name = player.get("team_name", "")
+            color     = POS_COLOUR[pos]
+            x         = xs[i]
 
             badge = ""
             if name == captain_name:
@@ -77,7 +86,7 @@ def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figur
             fig.add_trace(go.Scatter(
                 x=[x], y=[y],
                 mode="markers",
-                marker={"size": 30, "color": color, "line": {"color": "white", "width": 1.5}},
+                marker={"size": 32, "color": color, "line": {"color": "white", "width": 2}},
                 hovertemplate=(
                     f"<b>{name}</b><br>"
                     f"Pred: {pts:.2f} pts<br>"
@@ -85,22 +94,30 @@ def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figur
                 ),
             ))
 
-            # Name label above dot
+            # Name + captain badge above dot
             fig.add_annotation(
-                x=x, y=y + 0.065,
+                x=x, y=y + 0.068,
                 text=f"<b>{name}{badge}</b>",
                 showarrow=False,
                 font={"color": TEXT, "size": 9},
-                bgcolor="rgba(0,0,0,0.5)",
+                bgcolor="rgba(0,0,0,0.55)",
                 borderpad=2,
             )
 
-            # Points below dot
+            # Team name below dot
             fig.add_annotation(
-                x=x, y=y - 0.062,
+                x=x, y=y - 0.058,
+                text=f"{team_name}",
+                showarrow=False,
+                font={"color": "#ccc", "size": 8},
+            )
+
+            # Points further below
+            fig.add_annotation(
+                x=x, y=y - 0.095,
                 text=f"{pts:.1f}pts",
                 showarrow=False,
-                font={"color": "#ddd", "size": 8},
+                font={"color": "#aaa", "size": 8},
             )
 
     return fig
