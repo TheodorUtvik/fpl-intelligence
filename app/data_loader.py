@@ -107,6 +107,12 @@ def get_players_with_predictions() -> pd.DataFrame:
     return pool.reset_index(drop=True)
 
 
+def get_features_for_player(player_id: int) -> pd.DataFrame:
+    """Return all feature rows for a single player, sorted by round."""
+    features = load_features()
+    return features[features["player_id"] == player_id].sort_values("round").reset_index(drop=True)
+
+
 @lru_cache(maxsize=1)
 def get_available_players() -> pd.DataFrame:
     pool = get_players_with_predictions()
