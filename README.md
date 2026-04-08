@@ -8,11 +8,11 @@ Machine learning predicts player points using historical FPL and underlying stat
 
 ## What it does
 
-- **Collects data** from the FPL official API (points, minutes, ICT, fixtures) and Understat (xG, xA, shots, key passes)
+- **Collects data** from the FPL unofficial API (points, minutes, ICT, fixtures) and Understat (xG, xA, shots, key passes) using an async aiohttp client
 - **Engineers features** from rolling windows, fixture difficulty, price trends, and underlying performance metrics — strictly without data leakage
-- **Trains an XGBoost regressor** to predict next-gameweek points per player, validated with `TimeSeriesSplit`
-- **Optimises squad selection** using Integer Linear Programming (PuLP) subject to FPL budget, position, and club constraints
-- **Advises transfers** given a manager's current squad, available free transfers, and active chips
+- **Trains an XGBoost regressor** to predict next-gameweek points per player, validated with `TimeSeriesSplit` (MAE 0.75, R² 0.61)
+- **Optimises squad selection** using Integer Linear Programming (PuLP/CBC) subject to FPL budget, position, and club constraints
+- **Advises transfers** given a manager's current squad, available free transfers, and bank
 - **Explains predictions** with SHAP waterfall charts per player
 - **Serves everything** through a multi-page Dash app with a pitch graphic, sortable tables, and player profiles
 
@@ -25,8 +25,8 @@ Machine learning predicts player points using historical FPL and underlying stat
 | Data collection | FPL API, Understat, aiohttp, rapidfuzz |
 | Processing | pandas, numpy, pyarrow |
 | ML | XGBoost, scikit-learn, SHAP, Optuna |
-| Optimisation | PuLP (ILP) |
-| Dashboard | Dash, Plotly, dash-bootstrap-components, mplsoccer |
+| Optimisation | PuLP (CBC solver) |
+| Dashboard | Dash, Plotly, dash-bootstrap-components |
 | Deployment | Gunicorn, Render |
 
 ---
@@ -47,27 +47,28 @@ fpl-intelligence/
 │   └── 06_hyperparameter_tuning.ipynb
 ├── src/
 │   ├── data/
-│   │   ├── fpl_client.py       # FPL API wrapper
-│   │   └── understat_client.py # Understat async client
+│   │   ├── fpl_client.py       # FPL API async wrapper
+│   │   └── understat_client.py # Understat async client (reverse-engineered POST API)
 │   ├── features/
 │   │   └── engineer.py         # Feature engineering pipeline
-│   ├── models/
-│   │   ├── predict.py          # XGBoost training and inference
-│   │   └── optimize.py         # PuLP LP optimizer
-│   └── utils.py
+│   └── models/
+│       ├── predict.py          # XGBoost training and inference
+│       └── optimize.py         # PuLP ILP squad optimizer + transfer advisor
 ├── app/
-│   ├── app.py                  # Dash app entry point
+│   ├── app.py                  # Dash app entry point (Flask server exposed for Gunicorn)
+│   ├── data_loader.py          # Cached data loading shared across pages
 │   ├── assets/
 │   │   └── style.css
 │   ├── components/
-│   │   ├── navbar.py
-│   │   └── pitch.py            # Pitch graphic component
+│   │   └── navbar.py
 │   └── pages/
-│       ├── home.py
-│       ├── optimizer.py        # Squad optimizer page
-│       ├── transfers.py        # Transfer advisor page
-│       ├── top50.py            # Top performers table
-│       └── player.py           # Player profile + SHAP
+│       ├── home.py             # Dashboard overview with KPIs and charts
+│       ├── optimizer.py        # Squad optimizer with pitch visual
+│       ├── transfers.py        # Transfer advisor with free-text squad input
+│       ├── top50.py            # Sortable leaderboard with player links
+│       └── player.py           # Player profile with form, xG/xA and SHAP charts
+├── models/                     # Saved model artefacts (gitignored)
+├── Procfile                    # Gunicorn entry point for Render
 ├── requirements.txt
 └── README.md
 ```
@@ -77,12 +78,52 @@ fpl-intelligence/
 ## Setup
 
 ```bash
-git clone https://github.com/theodorsjetnanutvik/fpl-intelligence.git
+git clone https://github.com/TheodorUtvik/fpl-intelligence.git
 cd fpl-intelligence
 python -m venv venv
 source venv/bin/activate       # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### Run the notebooks in order
+
+```
+notebooks/01 → 02 → 03 → 04 → 05 → 06
+```
+
+Each notebook saves its outputs as parquet files consumed by the next. The model artefacts (`xgboost_model.json`, `shap_explainer.pkl`, `feature_cols.json`) are saved to `models/`.
+
+### Run the dashboard
+
+```bash
+python -m app.app
+# Open http://127.0.0.1:8050
+```
+
+---
+
+## Model performance
+
+| Metric | Value |
+|---|---|
+| Model | XGBoost regressor |
+| MAE (test set, GW27–30) | **0.75 pts** |
+| R² (test set) | **0.61** |
+| Baseline MAE (rolling 3GW avg) | 1.00 pts |
+| Improvement vs baseline | **25%** |
+| xG coverage (players with minutes) | ~70% |
+
+The test set uses a strict time-based holdout (future gameweeks never seen during training) via `TimeSeriesSplit`.
+
+---
+
+## Optimizer constraints
+
+The ILP selects a squad satisfying:
+- Budget ≤ £100m
+- Exactly 2 GKP, 5 DEF, 5 MID, 3 FWD (full squad) — or valid formation for starting XI
+- Maximum 3 players per club
+- Captain selected as highest predicted scorer
 
 ---
 
@@ -90,24 +131,20 @@ pip install -r requirements.txt
 
 - [x] Phase 1 — Environment and project setup
 - [x] Phase 2 — Data collection (FPL API + Understat)
-- [ ] Phase 3 — Feature engineering
-- [ ] Phase 4 — Modelling (XGBoost + SHAP)
-- [ ] Phase 5 — Hyperparameter tuning (Optuna)
-- [ ] Phase 6 — LP optimizer (PuLP)
-- [ ] Phase 7 — Dash dashboard
+- [x] Phase 3 — Feature engineering
+- [x] Phase 4 — Modelling (XGBoost + SHAP)
+- [x] Phase 5 — Hyperparameter tuning (Optuna)
+- [x] Phase 6 — LP optimizer (PuLP)
+- [x] Phase 7 — Dash dashboard
 - [ ] Phase 8 — Deployment (Render)
 - [ ] Phase 9 — Backtesting
 
 ---
 
-## Key learning outcomes
+## Known limitations and future improvements
 
-1. End-to-end ML pipeline with time-series validation
-2. Real-world dataset joining with fuzzy name matching
-3. Feature engineering without data leakage
-4. XGBoost regression + SHAP explainability
-5. Integer Linear Programming with PuLP
-6. Combining prediction with optimisation
-7. Dash callback architecture (transferable to React mental model)
-8. Deploying a Python web app with Gunicorn on Render
-9. Async Python for API data collection
+- Only one season of data (2024/25) — adding historical seasons could improve generalisation but risks stale player form
+- xG coverage ~70% — some player names do not fuzzy-match between FPL and Understat
+- Model does not account for opponent defensive strength (home/away) — planned feature
+- Player availability probability (`chance_of_playing_next_round`) not yet used as a feature — planned
+- Budget slider on optimizer not yet implemented
