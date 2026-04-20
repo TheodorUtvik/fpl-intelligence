@@ -21,6 +21,7 @@ import logging
 from typing import Optional
 
 import requests
+from requests.exceptions import RequestException
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -85,10 +86,29 @@ class FPLClient:
     # ------------------------------------------------------------------
 
     def _get(self, endpoint: str) -> dict:
+        """
+        Fetch from endpoint with retry logic (up to 3 attempts).
+        Uses exponential backoff: 1s, 2s, 4s between retries.
+        """
         url = f"{self.BASE_URL}{endpoint}"
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, timeout=15)
+                resp.raise_for_status()
+                return resp.json()
+            except RequestException as e:
+                if attempt == max_retries - 1:
+                    # Last attempt — give up
+                    raise
+                # Exponential backoff
+                wait_time = 2 ** attempt
+                logger.warning(
+                    f"Request failed ({type(e).__name__}), "
+                    f"retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait_time)
 
     def _bootstrap(self) -> dict:
         """Fetch and cache bootstrap-static so we only hit it once."""
