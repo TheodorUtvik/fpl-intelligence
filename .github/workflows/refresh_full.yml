@@ -1,0 +1,43 @@
+name: Stage 2 — Full pipeline
+
+on:
+  schedule:
+    # Runs daily at 23:30 UTC. Exits immediately if 48h haven't elapsed
+    # since Stage 1, or if Stage 2 already processed the current GW.
+    - cron: "30 23 * * *"
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Stage 2 — full pipeline
+        run: python scripts/check_and_run_full_pipeline.py
+
+      - name: Commit updated data, model and predictions
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: Stage 2 — full pipeline refresh [skip ci]"
+          file_pattern: >
+            data/processed/*.parquet
+            data/predictions/*.parquet
+            data/pipeline_state.json
+            models/*
+          commit_user_name: "fpl-intelligence-bot"
+          commit_user_email: "bot@fpl-intelligence"
