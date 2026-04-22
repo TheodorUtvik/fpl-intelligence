@@ -149,11 +149,18 @@ layout = dbc.Container([
 
     dbc.Row(dbc.Col([
         html.H2("Squad Optimizer", className="fw-bold mb-0"),
-        html.P(
+        html.P([
             "Integer Linear Programming selects the best 15-man squad or starting XI "
-            "within the £100m FPL budget.",
-            className="text-muted",
-        ),
+            "within the £100m FPL budget.  ",
+            html.Span(
+                f"Predicting GW {get_latest_gw() + 1}",
+                style={"color": GREEN, "fontWeight": "bold"},
+            ),
+            html.Span(
+                f"  ·  based on GW {get_latest_gw()} data",
+                className="text-muted",
+            ),
+        ]),
         html.Hr(style={"borderColor": "#444"}),
     ])),
 

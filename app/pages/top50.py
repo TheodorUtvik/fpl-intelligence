@@ -27,7 +27,7 @@ layout = dbc.Container([
     dbc.Row(dbc.Col([
         html.H2("Top 50 Players", className="fw-bold mb-0"),
         html.P(
-            f"Ranked by predicted points for GW {get_latest_gw()}. "
+            f"Predicting GW {get_latest_gw() + 1}  ·  based on GW {get_latest_gw()} data. "
             "Click any player name to view their full profile.",
             className="text-muted",
         ),

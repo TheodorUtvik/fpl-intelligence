@@ -123,13 +123,15 @@ def layout():
     xg_cov   = (played["rolling_xg_3gw"] > 0).mean() if len(played) > 0 else 0
     top_pick = players.sort_values("predicted_pts", ascending=False).iloc[0]
 
+    predict_gw = latest_gw + 1
+
     return dbc.Container([
 
         # Header
         dbc.Row(dbc.Col([
             html.H1("FPL Intelligence", className="fw-bold mb-0"),
             html.P(
-                f"Gameweek {latest_gw} predictions  ·  XGBoost + ILP squad optimisation",
+                f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data  ·  XGBoost + ILP squad optimisation",
                 className="text-muted mt-1",
             ),
             html.Hr(style={"borderColor": "#444"}),
@@ -137,16 +139,16 @@ def layout():
 
         # KPI cards
         dbc.Row([
-            _kpi_card("Current Gameweek",  f"GW {latest_gw}", BLUE),
-            _kpi_card("Players Tracked",   str(n_total),      GREEN),
-            _kpi_card("Available Players", str(n_avail),      ORANGE),
-            _kpi_card("xG Coverage",       f"{xg_cov:.0%}",   RED),
+            _kpi_card("Predicting for",    f"GW {predict_gw}", BLUE),
+            _kpi_card("Players Tracked",   str(n_total),       GREEN),
+            _kpi_card("Available Players", str(n_avail),       ORANGE),
+            _kpi_card("xG Coverage",       f"{xg_cov:.0%}",    RED),
         ], className="g-3 mb-4"),
 
         # Top scorers + charts
         dbc.Row([
             dbc.Col([
-                html.H5("Top 10 predicted scorers this GW", className="mb-3"),
+                html.H5(f"Top 10 predicted scorers — GW {predict_gw}", className="mb-3"),
                 _top_scorers_table(players),
             ], md=6),
             dbc.Col([
