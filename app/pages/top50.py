@@ -16,78 +16,90 @@ from app.data_loader import (
 
 dash.register_page(__name__, path="/top50", name="Top 50")
 
-GREEN  = "#00bc8c"
-CARD   = "#2d2d2d"
-TEXT   = "#ffffff"
+INK   = "#14130f"
+INK_3 = "#6e6c64"
+ACCENT = "#3d7a52"
 
 POS_OPTIONS = [
     {"label": "All positions", "value": "ALL"},
-    {"label": "GKP", "value": "GKP"},
-    {"label": "DEF", "value": "DEF"},
-    {"label": "MID", "value": "MID"},
-    {"label": "FWD", "value": "FWD"},
+    {"label": "GKP",           "value": "GKP"},
+    {"label": "DEF",           "value": "DEF"},
+    {"label": "MID",           "value": "MID"},
+    {"label": "FWD",           "value": "FWD"},
 ]
 
-# Build GW selector options: historical snapshots + current live predictions
 _history_gws  = get_prediction_history_gws()
 _current_pred = get_latest_gw() + 1
 
-_gw_options = [{"label": f"GW {gw} (saved)", "value": gw} for gw in sorted(_history_gws, reverse=True)]
+_gw_options = [
+    {"label": f"GW {gw} (saved)", "value": gw}
+    for gw in sorted(_history_gws, reverse=True)
+]
 if _current_pred not in _history_gws:
     _gw_options.insert(0, {"label": f"GW {_current_pred} (live)", "value": _current_pred})
 
 _default_gw = _current_pred
 
 
-layout = dbc.Container([
+layout = html.Div([
 
-    dbc.Row(dbc.Col([
-        html.H2("Top 50 Players", className="fw-bold mb-0"),
-        html.P(id="top50-subtitle", className="text-muted"),
-        html.Hr(style={"borderColor": "#444"}),
-    ])),
+    # ── Page header ──────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div("Analysis · Leaderboard", className="page-eyebrow"),
+            html.H1("Top 50 Players", className="page-title serif"),
+            html.P(id="top50-subtitle", className="page-desc"),
+        ]),
+    ], className="page-head"),
 
-    # Filters
-    dbc.Row([
-        dbc.Col([
-            html.Label("Gameweek", className="text-muted mb-1"),
+    # ── Filters ──────────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div("Gameweek", className="control-label"),
             dbc.Select(
                 id="top50-gw-select",
                 options=_gw_options,
                 value=_default_gw,
             ),
-        ], xs=6, md=3),
-        dbc.Col([
-            html.Label("Position", className="text-muted mb-1"),
+        ], className="control-group"),
+        html.Div([
+            html.Div("Position", className="control-label"),
             dbc.Select(
                 id="top50-pos-filter",
                 options=POS_OPTIONS,
                 value="ALL",
             ),
-        ], xs=6, md=3),
-        dbc.Col([
-            html.Label("Sort by", className="text-muted mb-1"),
+        ], className="control-group"),
+        html.Div([
+            html.Div("Sort by", className="control-label"),
             dbc.Select(
                 id="top50-sort",
                 options=[
-                    {"label": "Predicted pts", "value": "predicted_pts"},
-                    {"label": "Value (pts / £m)", "value": "pts_per_million"},
-                    {"label": "Rolling form (3GW)", "value": "rolling_pts_3gw"},
+                    {"label": "Predicted pts",       "value": "predicted_pts"},
+                    {"label": "Value (pts / £m)",     "value": "pts_per_million"},
+                    {"label": "Rolling form (3GW)",   "value": "rolling_pts_3gw"},
                 ],
                 value="predicted_pts",
             ),
-        ], xs=6, md=3),
-    ], className="mb-3"),
+        ], className="control-group"),
+    ], className="controls-bar"),
 
-    # Table
-    html.Div(id="top50-table"),
+    # ── Table card ───────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div(id="top50-card-title", className="card-title"),
+            html.Span("click player name to drill in", className="tag"),
+        ], className="card-hd"),
+        html.Div(id="top50-table", className="card-body flush"),
+    ], className="card"),
 
-], fluid=True, className="py-4 px-3")
+], className="page")
 
 
 @callback(
     Output("top50-table", "children"),
     Output("top50-subtitle", "children"),
+    Output("top50-card-title", "children"),
     Input("top50-gw-select", "value"),
     Input("top50-pos-filter", "value"),
     Input("top50-sort", "value"),
@@ -97,24 +109,27 @@ def update_table(selected_gw, pos_filter, sort_col):
     latest_gw   = get_latest_gw()
     predict_gw  = latest_gw + 1
 
-    # Load data — snapshot if historical, live predictions if current
     if selected_gw == predict_gw:
         df = get_players_with_predictions().copy()
-        subtitle = (
-            f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data  ·  "
-            "click any player name to view their full profile."
+        subtitle    = (
+            f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data"
         )
+        card_title  = f"Predicted scorers · GW {predict_gw}"
     else:
         try:
             df = load_predictions_for_gw(selected_gw)
-            data_gw = selected_gw - 1
-            subtitle = (
+            data_gw    = selected_gw - 1
+            subtitle   = (
                 f"GW {selected_gw} predictions (saved snapshot)  ·  "
-                f"based on GW {data_gw} data  ·  "
-                "click any player name to view their full profile."
+                f"based on GW {data_gw} data"
             )
+            card_title = f"Predicted scorers · GW {selected_gw} (snapshot)"
         except FileNotFoundError:
-            return dbc.Alert(f"No snapshot found for GW {selected_gw}.", color="warning"), ""
+            return (
+                dbc.Alert(f"No snapshot found for GW {selected_gw}.", color="warning"),
+                "",
+                "—",
+            )
 
     if pos_filter != "ALL":
         df = df[df["position"] == pos_filter]
@@ -124,49 +139,54 @@ def update_table(selected_gw, pos_filter, sort_col):
 
     rows = []
     for _, row in df.iterrows():
-        pos_colour = {"GKP": "warning", "DEF": "primary", "MID": "success", "FWD": "danger"}
+        pos  = row["position"]
         xg   = row.get("rolling_xg_3gw", 0) or 0
         xa   = row.get("rolling_xa_3gw", 0) or 0
         own  = row.get("ownership_pct", 0) or 0
         form = row.get("rolling_pts_3gw", 0) or 0
+        ppm  = row.get("pts_per_million", None)
 
         rows.append(html.Tr([
-            html.Td(int(row["rank"]), style={"color": "#aaa", "width": "40px"}),
+            html.Td(int(row["rank"]), className="mono rank-num"),
             html.Td(
                 html.A(
                     row["web_name"],
                     href=f"/player/{int(row['player_id'])}",
-                    style={"color": GREEN, "fontWeight": "bold", "textDecoration": "none"},
+                    style={"fontWeight": 500, "textDecoration": "none", "color": INK},
                 )
             ),
-            html.Td(dbc.Badge(row["position"],
-                              color=pos_colour.get(row["position"], "secondary"))),
-            html.Td(row.get("team_name", ""), style={"color": "#aaa"}),
-            html.Td(f'£{row["now_cost"]:.1f}m', style={"color": "#aaa"}),
-            html.Td(
-                f'{row["predicted_pts"]:.2f}',
-                style={"color": GREEN, "fontWeight": "bold"},
-            ),
-            html.Td(f'{row["pts_per_million"]:.2f}' if row["pts_per_million"] == row["pts_per_million"] else "—"),
-            html.Td(f'{form:.2f}'),
-            html.Td(f'{xg:.2f}'),
-            html.Td(f'{xa:.2f}'),
-            html.Td(f'{own:.1f}%'),
+            html.Td(html.Span(pos, className=f"pos-pill pos-{pos}")),
+            html.Td(row.get("team_name", ""), style={"color": INK_3}),
+            html.Td(f'£{row["now_cost"]:.1f}m', className="right mono",
+                    style={"color": INK_3}),
+            html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",
+                    style={"color": ACCENT, "fontWeight": 600}),
+            html.Td(f'{ppm:.2f}' if ppm == ppm and ppm is not None else "—",
+                    className="right mono"),
+            html.Td(f'{form:.2f}', className="right mono"),
+            html.Td(f'{xg:.2f}',  className="right mono"),
+            html.Td(f'{xa:.2f}',  className="right mono"),
+            html.Td(f'{own:.1f}%', className="right mono"),
         ]))
 
-    table = dbc.Table(
+    table = html.Table(
         [
             html.Thead(html.Tr([
-                html.Th("#"), html.Th("Player"), html.Th("Pos"),
-                html.Th("Club"), html.Th("Cost"),
-                html.Th("Pred. pts"), html.Th("pts/£m"),
-                html.Th("Form (3GW)"), html.Th("xG (3GW)"),
-                html.Th("xA (3GW)"), html.Th("Owned"),
-            ], style={"color": TEXT})),
+                html.Th("#"),
+                html.Th("Player"),
+                html.Th("Pos"),
+                html.Th("Club"),
+                html.Th("Cost",         className="right"),
+                html.Th("Pred. pts",    className="right"),
+                html.Th("pts / £m",     className="right"),
+                html.Th("Form 3GW",     className="right"),
+                html.Th("xG 3GW",       className="right"),
+                html.Th("xA 3GW",       className="right"),
+                html.Th("Owned",        className="right"),
+            ])),
             html.Tbody(rows),
         ],
-        bordered=False, hover=True, responsive=True, size="sm",
-        style={"backgroundColor": CARD},
+        className="data",
     )
 
-    return table, subtitle
+    return table, subtitle, card_title
