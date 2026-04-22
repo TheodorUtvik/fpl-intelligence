@@ -45,8 +45,9 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 RAW       = ROOT / "data" / "raw"
-PROCESSED = ROOT / "data" / "processed"
-MODELS    = ROOT / "models"
+PROCESSED    = ROOT / "data" / "processed"
+PREDICTIONS  = ROOT / "data" / "predictions"
+MODELS       = ROOT / "models"
 
 
 # ── Step 1: FPL ──────────────────────────────────────────────────────────────
@@ -182,14 +183,34 @@ def engineer_and_train(merged_df: pd.DataFrame, fixtures_df: pd.DataFrame) -> No
     PROCESSED.mkdir(parents=True, exist_ok=True)
     features.to_parquet(PROCESSED / "features.parquet", index=False)
 
-    latest_gw = int(features["round"].max())
-    log.info(f"  Features saved: {features.shape}  |  latest GW in features: {latest_gw}")
+    # Determine the latest *complete* GW (same threshold as the app)
+    counts   = features.groupby("round").size()
+    complete = counts[counts >= 650].index
+    if complete.empty:
+        log.warning("No complete GW found (threshold 650). Skipping prediction snapshot.")
+        return
+    latest_gw   = int(complete.max())
+    predict_gw  = latest_gw + 1
+    log.info(f"  Features saved: {features.shape}  |  latest complete GW: {latest_gw}  →  predicting GW {predict_gw}")
 
     log.info("=== Step 5: Retraining model ===")
     predictor = FPLPredictor(models_dir=MODELS)
     predictor.train(features)
     predictor.save()
     log.info("  Model saved.")
+
+    log.info("=== Step 6: Saving prediction snapshot ===")
+    snapshot_path = PREDICTIONS / f"gw{predict_gw}.parquet"
+    if snapshot_path.exists():
+        log.info(f"  Snapshot for GW{predict_gw} already exists — overwriting.")
+
+    latest_df = features[features["round"] == latest_gw].copy()
+    latest_df["predicted_pts"] = predictor.predict(latest_df)
+    latest_df["predict_gw"]    = predict_gw
+
+    PREDICTIONS.mkdir(parents=True, exist_ok=True)
+    latest_df.to_parquet(snapshot_path, index=False)
+    log.info(f"  Prediction snapshot saved → data/predictions/gw{predict_gw}.parquet ({len(latest_df)} players)")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

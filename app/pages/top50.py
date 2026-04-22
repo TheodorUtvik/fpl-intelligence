@@ -1,12 +1,18 @@
 """
 Top 50 page — sortable leaderboard of predicted scorers.
+Includes a GW selector to browse historical prediction snapshots.
 """
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, callback, dash_table, html
+from dash import Input, Output, callback, html
 
-from app.data_loader import get_latest_gw, get_players_with_predictions
+from app.data_loader import (
+    get_latest_gw,
+    get_players_with_predictions,
+    get_prediction_history_gws,
+    load_predictions_for_gw,
+)
 
 dash.register_page(__name__, path="/top50", name="Top 50")
 
@@ -22,20 +28,35 @@ POS_OPTIONS = [
     {"label": "FWD", "value": "FWD"},
 ]
 
+# Build GW selector options: historical snapshots + current live predictions
+_history_gws  = get_prediction_history_gws()
+_current_pred = get_latest_gw() + 1
+
+_gw_options = [{"label": f"GW {gw} (saved)", "value": gw} for gw in sorted(_history_gws, reverse=True)]
+if _current_pred not in _history_gws:
+    _gw_options.insert(0, {"label": f"GW {_current_pred} (live)", "value": _current_pred})
+
+_default_gw = _current_pred
+
+
 layout = dbc.Container([
 
     dbc.Row(dbc.Col([
         html.H2("Top 50 Players", className="fw-bold mb-0"),
-        html.P(
-            f"Predicting GW {get_latest_gw() + 1}  ·  based on GW {get_latest_gw()} data. "
-            "Click any player name to view their full profile.",
-            className="text-muted",
-        ),
+        html.P(id="top50-subtitle", className="text-muted"),
         html.Hr(style={"borderColor": "#444"}),
     ])),
 
     # Filters
     dbc.Row([
+        dbc.Col([
+            html.Label("Gameweek", className="text-muted mb-1"),
+            dbc.Select(
+                id="top50-gw-select",
+                options=_gw_options,
+                value=_default_gw,
+            ),
+        ], xs=6, md=3),
         dbc.Col([
             html.Label("Position", className="text-muted mb-1"),
             dbc.Select(
@@ -66,11 +87,34 @@ layout = dbc.Container([
 
 @callback(
     Output("top50-table", "children"),
+    Output("top50-subtitle", "children"),
+    Input("top50-gw-select", "value"),
     Input("top50-pos-filter", "value"),
     Input("top50-sort", "value"),
 )
-def update_table(pos_filter, sort_col):
-    df = get_players_with_predictions().copy()
+def update_table(selected_gw, pos_filter, sort_col):
+    selected_gw = int(selected_gw)
+    latest_gw   = get_latest_gw()
+    predict_gw  = latest_gw + 1
+
+    # Load data — snapshot if historical, live predictions if current
+    if selected_gw == predict_gw:
+        df = get_players_with_predictions().copy()
+        subtitle = (
+            f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data  ·  "
+            "click any player name to view their full profile."
+        )
+    else:
+        try:
+            df = load_predictions_for_gw(selected_gw)
+            data_gw = selected_gw - 1
+            subtitle = (
+                f"GW {selected_gw} predictions (saved snapshot)  ·  "
+                f"based on GW {data_gw} data  ·  "
+                "click any player name to view their full profile."
+            )
+        except FileNotFoundError:
+            return dbc.Alert(f"No snapshot found for GW {selected_gw}.", color="warning"), ""
 
     if pos_filter != "ALL":
         df = df[df["position"] == pos_filter]
@@ -103,7 +147,7 @@ def update_table(pos_filter, sort_col):
                 f'{row["predicted_pts"]:.2f}',
                 style={"color": GREEN, "fontWeight": "bold"},
             ),
-            html.Td(f'{row["pts_per_million"]:.2f}'),
+            html.Td(f'{row["pts_per_million"]:.2f}' if row["pts_per_million"] == row["pts_per_million"] else "—"),
             html.Td(f'{form:.2f}'),
             html.Td(f'{xg:.2f}'),
             html.Td(f'{xa:.2f}'),
@@ -125,4 +169,4 @@ def update_table(pos_filter, sort_col):
         style={"backgroundColor": CARD},
     )
 
-    return table
+    return table, subtitle

@@ -20,9 +20,10 @@ sys.path.insert(0, str(ROOT))
 from src.models.predict import FPLPredictor  # noqa: E402
 from src.models.optimize import FPLOptimizer  # noqa: E402
 
-PROCESSED = ROOT / "data" / "processed"
-RAW       = ROOT / "data" / "raw"
-MODELS    = ROOT / "models"
+PROCESSED   = ROOT / "data" / "processed"
+PREDICTIONS = ROOT / "data" / "predictions"
+RAW         = ROOT / "data" / "raw"
+MODELS      = ROOT / "models"
 
 POSITION_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 POS_ORDER    = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
@@ -111,6 +112,49 @@ def get_players_with_predictions() -> pd.DataFrame:
     pool["pos_order"] = pool["position"].map(POS_ORDER)
 
     return pool.reset_index(drop=True)
+
+
+def get_prediction_history_gws() -> list[int]:
+    """
+    Return a sorted list of GW numbers for which a prediction snapshot exists
+    in data/predictions/.
+    """
+    if not PREDICTIONS.exists():
+        return []
+    gws = []
+    for f in PREDICTIONS.glob("gw*.parquet"):
+        try:
+            gws.append(int(f.stem.replace("gw", "")))
+        except ValueError:
+            pass
+    return sorted(gws)
+
+
+def load_predictions_for_gw(predict_gw: int) -> pd.DataFrame:
+    """
+    Load a saved prediction snapshot for a specific GW.
+    Attaches team_name and pts_per_million for display.
+    """
+    path = PREDICTIONS / f"gw{predict_gw}.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"No prediction snapshot for GW{predict_gw}")
+
+    df = pd.read_parquet(path)
+    teams = load_teams()[["id", "short_name"]].rename(
+        columns={"id": "team", "short_name": "team_name"}
+    )
+    df = df.merge(teams, on="team", how="left")
+
+    fpl_meta = load_fpl_players()[["id", "web_name", "status"]].rename(
+        columns={"id": "player_id"}
+    )
+    if "web_name" not in df.columns:
+        df = df.merge(fpl_meta, on="player_id", how="left")
+
+    df = df.rename(columns={"value": "now_cost"}) if "value" in df.columns and "now_cost" not in df.columns else df
+    df["pts_per_million"] = df["predicted_pts"] / df["now_cost"].replace(0, float("nan"))
+    df["pos_order"] = df["position"].map(POS_ORDER)
+    return df.reset_index(drop=True)
 
 
 def get_features_for_player(player_id: int) -> pd.DataFrame:
