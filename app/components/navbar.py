@@ -6,6 +6,7 @@ navbar = dbc.NavbarSimple(
         dbc.NavItem(dbc.NavLink("Optimizer", href="/optimizer")),
         dbc.NavItem(dbc.NavLink("Transfers", href="/transfers")),
         dbc.NavItem(dbc.NavLink("Top 50", href="/top50")),
+        dbc.NavItem(dbc.NavLink("GW Results", href="/results")),
     ],
     brand="FPL Intelligence",
     brand_href="/",
