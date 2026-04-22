@@ -64,9 +64,15 @@ def get_optimizer() -> FPLOptimizer:
 
 @lru_cache(maxsize=1)
 def get_latest_gw() -> int:
+    """
+    Returns the latest gameweek that has enough data to be considered complete.
+    Threshold of 650 players ensures partial GWs (mid-week, still in progress)
+    are ignored — the app stays on the last fully-played GW instead of
+    showing predictions derived from incomplete data.
+    """
     features = load_features()
     counts = features.groupby("round").size()
-    complete = counts[counts >= 200].index
+    complete = counts[counts >= 650].index
     return int(complete.max())
 
 
