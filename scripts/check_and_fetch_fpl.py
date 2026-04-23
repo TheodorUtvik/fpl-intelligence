@@ -12,6 +12,7 @@ Usage:
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,14 @@ log = logging.getLogger(__name__)
 
 RAW        = ROOT / "data" / "raw"
 STATE_FILE = ROOT / "data" / "pipeline_state.json"
+
+
+def set_gha_output(key: str, value: str) -> None:
+    """Write a step output for GitHub Actions (no-op outside CI)."""
+    gha_output = os.getenv("GITHUB_OUTPUT")
+    if gha_output:
+        with open(gha_output, "a") as fh:
+            fh.write(f"{key}={value}\n")
 
 
 def load_state() -> dict:
@@ -63,10 +72,12 @@ def main() -> None:
 
     if finished_gw is None:
         log.info("No finished GW found. Nothing to do.")
+        set_gha_output("fetched", "false")
         sys.exit(0)
 
     if finished_gw <= state["fpl_fetched_gw"]:
         log.info(f"GW{finished_gw} already fetched. Nothing to do.")
+        set_gha_output("fetched", "false")
         sys.exit(0)
 
     log.info(f"New finished GW detected: GW{finished_gw}. Fetching FPL data...")
@@ -88,6 +99,7 @@ def main() -> None:
     state["fpl_fetched_at"] = datetime.now(timezone.utc).isoformat()
     save_state(state)
     log.info(f"  pipeline_state.json updated: fpl_fetched_gw={finished_gw}")
+    set_gha_output("fetched", "true")
     log.info("Stage 1 complete.")
 
 
