@@ -966,7 +966,7 @@ textarea.form-control {
   font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 600;
-  background: rgba(251,249,243,0.92);
+  background: var(--bg-elev);
   color: var(--ink);
   padding: 1px 5px;
   border-radius: 2px;
