@@ -47,7 +47,7 @@ def _build_html_pitch(squad_df, captain_name: str, vice_name: str) -> html.Div:
     player_tokens = []
     idx = 0
 
-    for pos in ["FWD", "MID", "DEF", "GKP"]:
+    for pos in ["GKP", "DEF", "MID", "FWD"]:
         pos_players = squad_df[squad_df["position"] == pos].reset_index(drop=True)
         n = len(pos_players)
         if n == 0:

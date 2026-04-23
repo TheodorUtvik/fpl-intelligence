@@ -977,6 +977,13 @@ textarea.form-control {
   box-shadow: 0 1px 3px rgba(0,0,0,0.22);
   line-height: 1.5;
 }
+
+/* Dark mode: semi-transparent light background for label visibility on pitch */
+[data-theme='dark'] .player-name {
+  background: rgba(236, 235, 228, 0.18);
+  border: 0.5px solid rgba(236, 235, 228, 0.25);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
 .player-pts {
   font-family: var(--font-mono);
   font-size: 9px;
