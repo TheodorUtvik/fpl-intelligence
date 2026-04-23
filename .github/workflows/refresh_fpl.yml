@@ -27,9 +27,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Stage 1 — FPL fetch
+        id: fetch
         run: python scripts/check_and_fetch_fpl.py
 
       - name: Commit updated FPL data and state
+        if: steps.fetch.outputs.fetched == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: Stage 1 — FPL data refresh [skip ci]"
