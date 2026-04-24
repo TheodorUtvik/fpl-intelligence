@@ -35,6 +35,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: Stage 1 — FPL data refresh [skip ci]"
-          file_pattern: "data/raw/fpl_*.parquet data/pipeline_state.json"
+          file_pattern: "data/raw data/pipeline_state.json"
           commit_user_name: "fpl-intelligence-bot"
           commit_user_email: "bot@fpl-intelligence"
