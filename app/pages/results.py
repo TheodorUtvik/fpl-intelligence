@@ -7,7 +7,7 @@ so you can track how well the model performed week by week.
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import Input, Output, callback, html
+from dash import html
 from pathlib import Path
 import sys
 
@@ -23,25 +23,18 @@ from app.data_loader import (
 
 dash.register_page(__name__, path="/results", name="GW Results")
 
-GREEN  = "#00bc8c"
-RED    = "#e74c3c"
-CARD   = "#2d2d2d"
-TEXT   = "#ffffff"
-ORANGE = "#fd7e14"
-BLUE   = "#375a7f"
+INK    = "#14130f"
+INK_3  = "#6e6c64"
+ACCENT = "#3d7a52"
+GOOD   = "#3d7452"
+BAD    = "#b5553a"
 
 RAW = ROOT / "data" / "raw"
-
-POS_BADGE = {"GKP": "warning", "DEF": "primary", "MID": "success", "FWD": "danger"}
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
 def _build_comparison(predict_from_gw: int, actual_gw: int) -> pd.DataFrame:
-    """
-    Use the model on features from `predict_from_gw` and compare to
-    actual points scored in `actual_gw`.
-    """
     features  = load_features()
     predictor = get_predictor()
     teams = load_teams()[["id", "short_name"]].rename(
@@ -54,7 +47,6 @@ def _build_comparison(predict_from_gw: int, actual_gw: int) -> pd.DataFrame:
 
     snap["predicted_pts"] = predictor.predict(snap)
 
-    # Actual points from the raw FPL gameweeks file
     gw_path = RAW / "fpl_gameweeks.parquet"
     if not gw_path.exists():
         return pd.DataFrame()
@@ -63,128 +55,133 @@ def _build_comparison(predict_from_gw: int, actual_gw: int) -> pd.DataFrame:
     actuals = actuals[actuals["round"] == actual_gw][["player_id", "total_points", "minutes"]]
     actuals = actuals.rename(columns={"total_points": "actual_pts"})
 
-    # features already contains web_name and position — just add team_name and actuals
     df = snap.merge(actuals, on="player_id", how="inner")
     df = df.merge(teams, on="team", how="left")
-
-    # In double GWs a player can have two feature rows — keep the one with
-    # the highest predicted_pts (most recent fixture data)
     df = df.sort_values("predicted_pts", ascending=False).drop_duplicates("player_id")
-
     df["diff"] = df["actual_pts"] - df["predicted_pts"]
-    df = df[df["minutes"] > 0]  # only players who actually played
+    df = df[df["minutes"] > 0]
 
     keep = ["player_id", "web_name", "position", "team_name",
             "predicted_pts", "actual_pts", "diff", "minutes"]
     return df[keep].sort_values("predicted_pts", ascending=False).reset_index(drop=True)
 
 
-def _summary_cards(df: pd.DataFrame) -> dbc.Row:
+def _summary_kpis(df: pd.DataFrame) -> html.Div:
     if df.empty:
-        return dbc.Row()
+        return html.Div()
 
     mae      = df["diff"].abs().mean()
     within2  = (df["diff"].abs() <= 2).mean() * 100
     best_idx = df["diff"].abs().idxmin()
     miss_idx = df["diff"].abs().idxmax()
+    best     = df.loc[best_idx]
+    miss     = df.loc[miss_idx]
 
-    best = df.loc[best_idx]
-    miss = df.loc[miss_idx]
-
-    return dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("MAE", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(f"{mae:.2f} pts", style={"color": ORANGE, "fontWeight": "bold"}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Within 2 pts", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(f"{within2:.0f}%", style={"color": GREEN, "fontWeight": "bold"}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Best call", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(
-                f"{best['web_name']}  {best['diff']:+.1f}",
-                style={"color": GREEN, "fontWeight": "bold", "fontSize": "1rem"},
+    return html.Div([
+        html.Div([
+            html.Div("MAE (holdout)", className="kpi-label"),
+            html.Div([f"{mae:.2f}", html.Span("pts", className="unit")],
+                     className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Within 2 pts", className="kpi-label"),
+            html.Div([f"{within2:.0f}", html.Span("%", className="unit")],
+                     className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Best call", className="kpi-label"),
+            html.Div(best["web_name"], className="kpi-value serif-val"),
+            html.Div(
+                [html.Span(f"{best['diff']:+.1f} pts", className="up mono")],
+                className="kpi-delta",
             ),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Biggest miss", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(
-                f"{miss['web_name']}  {miss['diff']:+.1f}",
-                style={"color": RED, "fontWeight": "bold", "fontSize": "1rem"},
+        ], className="kpi"),
+        html.Div([
+            html.Div("Biggest miss", className="kpi-label"),
+            html.Div(miss["web_name"], className="kpi-value serif-val"),
+            html.Div(
+                [html.Span(f"{miss['diff']:+.1f} pts", className="down mono")],
+                className="kpi-delta",
             ),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-    ], className="g-3 mb-3")
+        ], className="kpi"),
+    ], className="kpi-grid")
 
 
-def _results_table(df: pd.DataFrame) -> dbc.Table:
+def _results_table(df: pd.DataFrame) -> html.Table:
     rows = []
     for i, (_, row) in enumerate(df.head(30).iterrows(), 1):
-        diff    = row["diff"]
-        colour  = GREEN if diff > 0 else (RED if diff < -1 else "#aaa")
+        diff     = row["diff"]
+        diff_cls = "diff-good" if diff > 0 else ("diff-bad" if diff < -1 else "diff-mid")
+        pos      = row["position"]
 
         rows.append(html.Tr([
-            html.Td(i, style={"color": "#aaa", "width": "32px"}),
+            html.Td(i, className="mono rank-num"),
             html.Td(
                 html.A(
                     row["web_name"],
                     href=f"/player/{int(row['player_id'])}",
-                    style={"color": TEXT, "fontWeight": "bold", "textDecoration": "none"},
+                    style={"fontWeight": 500, "textDecoration": "none", "color": INK},
                 )
             ),
-            html.Td(dbc.Badge(row["position"],
-                              color=POS_BADGE.get(row["position"], "secondary"))),
-            html.Td(row.get("team_name", ""), style={"color": "#aaa"}),
-            html.Td(f'{row["predicted_pts"]:.2f}', style={"color": BLUE}),
-            html.Td(f'{row["actual_pts"]:.0f}',    style={"color": TEXT, "fontWeight": "bold"}),
-            html.Td(
-                f'{diff:+.2f}',
-                style={"color": colour, "fontWeight": "bold"},
-            ),
+            html.Td(html.Span(pos, className=f"pos-pill pos-{pos}")),
+            html.Td(row.get("team_name", ""), style={"color": INK_3}),
+            html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",
+                    style={"color": ACCENT}),
+            html.Td(f'{row["actual_pts"]:.0f}', className="right mono",
+                    style={"fontWeight": 600}),
+            html.Td(f'{diff:+.2f}', className=f"right mono {diff_cls}"),
         ]))
 
-    return dbc.Table(
+    return html.Table(
         [
             html.Thead(html.Tr([
-                html.Th("#"), html.Th("Player"), html.Th("Pos"), html.Th("Club"),
-                html.Th("Predicted"), html.Th("Actual"), html.Th("Diff"),
-            ], style={"color": TEXT})),
+                html.Th("#"),
+                html.Th("Player"),
+                html.Th("Pos"),
+                html.Th("Club"),
+                html.Th("Predicted",  className="right"),
+                html.Th("Actual",     className="right"),
+                html.Th("Diff",       className="right"),
+            ])),
             html.Tbody(rows),
         ],
-        bordered=False, hover=True, responsive=True, size="sm",
-        style={"backgroundColor": CARD},
+        className="data",
     )
 
 
-def _tab_content(predict_from_gw: int, actual_gw: int, label: str) -> dbc.Tab:
+def _tab_content(predict_from_gw: int, actual_gw: int) -> html.Div:
     df = _build_comparison(predict_from_gw, actual_gw)
 
     if df.empty:
-        body = dbc.Alert(
-            f"No data available for GW {actual_gw}.", color="secondary"
+        return html.Div(
+            dbc.Alert(f"No data available for GW {actual_gw}.", color="secondary"),
+            style={"paddingTop": "16px"},
         )
-    else:
-        body = html.Div([
-            _summary_cards(df),
-            html.P(
-                f"{len(df)} players who played  ·  "
-                f"sorted by predicted pts (top 30 shown)",
-                className="text-muted mb-2",
-                style={"fontSize": "0.8rem"},
-            ),
-            _results_table(df),
-        ])
 
-    return dbc.Tab(body, label=label, tab_id=f"tab-{actual_gw}")
+    return html.Div([
+        _summary_kpis(df),
+        html.P(
+            f"{len(df)} players who played  ·  sorted by predicted pts (top 30 shown)",
+            style={"fontFamily": "var(--font-mono)", "fontSize": "10px",
+                   "color": "var(--ink-3)", "marginBottom": "12px",
+                   "letterSpacing": "0.04em"},
+        ),
+        html.Div([
+            html.Div([
+                html.Div(f"GW {actual_gw} — predicted vs actual", className="card-title"),
+                html.Span(f"model trained on GW {predict_from_gw}", className="tag"),
+            ], className="card-hd"),
+            html.Div(_results_table(df), className="card-body flush"),
+        ], className="card"),
+    ])
 
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 def layout():
-    latest_gw   = get_latest_gw()
-    predict_gw  = latest_gw + 1
+    latest_gw  = get_latest_gw()
+    predict_gw = latest_gw + 1
 
-    # Build tabs: current GW + 3 previous
     gw_pairs = [
         (predict_gw - 1 - i, predict_gw - i)
         for i in range(4)
@@ -192,21 +189,29 @@ def layout():
 
     tabs = []
     for i, (from_gw, actual_gw) in enumerate(gw_pairs):
-        label = f"GW {actual_gw}" + (" (current)" if i == 0 else "")
-        tabs.append(_tab_content(from_gw, actual_gw, label))
+        label = f"GW {actual_gw}" + (" ← current" if i == 0 else "")
+        tabs.append(dbc.Tab(
+            _tab_content(from_gw, actual_gw),
+            label=label,
+            tab_id=f"tab-{actual_gw}",
+        ))
 
-    return dbc.Container([
+    return html.Div([
 
-        dbc.Row(dbc.Col([
-            html.H2("GW Results", className="fw-bold mb-0"),
-            html.P(
-                "Predicted vs actual points — how the model performed each week. "
-                "Green diff = player outscored prediction, red = underperformed.",
-                className="text-muted",
-            ),
-            html.Hr(style={"borderColor": "#444"}),
-        ])),
+        # ── Page header ──────────────────────────────────────
+        html.Div([
+            html.Div([
+                html.Div("History · GW Results", className="page-eyebrow"),
+                html.H1("Model performance", className="page-title serif"),
+                html.P(
+                    "Predicted vs actual points — track how the XGBoost model performed "
+                    "each week. Green diff = player outscored prediction.",
+                    className="page-desc",
+                ),
+            ]),
+        ], className="page-head"),
 
+        # ── Tabs ─────────────────────────────────────────────
         dbc.Tabs(tabs, active_tab=f"tab-{predict_gw}"),
 
-    ], fluid=True, className="py-4 px-3")
+    ], className="page")

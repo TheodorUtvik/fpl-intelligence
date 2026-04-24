@@ -5,201 +5,195 @@ Runs the ILP solver on button click and renders the result as a pitch visual + t
 
 import dash
 import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
-import numpy as np
-from dash import Input, Output, State, callback, dcc, html
+from dash import Input, Output, State, callback, dcc, html  # dcc kept for dcc.Loading
 
 from app.data_loader import get_available_players, get_latest_gw, get_optimizer
 
 dash.register_page(__name__, path="/optimizer", name="Optimizer")
 
-GREEN  = "#00bc8c"
-BLUE   = "#375a7f"
-RED    = "#e74c3c"
-ORANGE = "#fd7e14"
-CARD   = "#2d2d2d"
-TEXT   = "#ffffff"
-PITCH  = "#2d7a2d"
+# ── Design palette ────────────────────────────────────────────────────────────
+INK    = "#14130f"
+INK_3  = "#6e6c64"
+ACCENT = "#3d7a52"
 
-POS_COLOUR = {"GKP": ORANGE, "DEF": BLUE, "MID": GREEN, "FWD": RED}
-POS_BADGE  = {"GKP": "warning", "DEF": "primary", "MID": "success", "FWD": "danger"}
+# Position fill colors  (light text except GKP)
+POS_COLOUR    = {"GKP": "#c8a84a", "DEF": "#4a6fb5", "MID": "#3d7a52", "FWD": "#b5553a"}
+POS_TEXT      = {"GKP": "#14130f", "DEF": "#fff",    "MID": "#fff",    "FWD": "#fff"}
 
 
-# ── Pitch figure ─────────────────────────────────────────────────────────────
+# ── HTML / CSS pitch with staggered animation ─────────────────────────────────
 
-def _build_pitch_figure(squad_df, captain_name: str, vice_name: str) -> go.Figure:
-    fig = go.Figure()
-    fig.update_layout(
-        xaxis={"visible": False, "range": [0, 1]},
-        yaxis={"visible": False, "range": [0, 1]},
-        plot_bgcolor=PITCH,
-        paper_bgcolor="#1a1a2e",
-        margin={"t": 10, "b": 10, "l": 10, "r": 10},
-        height=540,
-        showlegend=False,
-    )
+def _row_xs_pct(n: int) -> list[float]:
+    """Return n evenly-spaced x positions as percentages of pitch width."""
+    if n == 1:
+        return [50.0]
+    margins = {2: (25.0, 75.0), 3: (18.0, 82.0),
+               4: (12.0, 88.0), 5: (8.0,  92.0)}
+    lo, hi = margins.get(n, (8.0, 92.0))
+    return [lo + (hi - lo) * i / (n - 1) for i in range(n)]
 
-    # Pitch markings
-    fig.add_shape(type="rect", x0=0.04, y0=0.03, x1=0.96, y1=0.97,
-                  line={"color": "white", "width": 2})
-    fig.add_shape(type="line", x0=0.04, y0=0.5, x1=0.96, y1=0.5,
-                  line={"color": "white", "width": 1.5})
-    fig.add_shape(type="circle", x0=0.42, y0=0.43, x1=0.58, y1=0.57,
-                  line={"color": "white", "width": 1.5})
 
-    # Row y positions — kept away from pitch edges so labels don't overlap outline
-    row_y = {"GKP": 0.13, "DEF": 0.35, "MID": 0.60, "FWD": 0.84}
+def _build_html_pitch(squad_df, captain_name: str, vice_name: str) -> html.Div:
+    """
+    Pure HTML/CSS pitch with staggered player-land animation.
 
-    def row_xs(n: int) -> list:
-        if n == 1:
-            return [0.5]
-        spacing = {2: (0.3, 0.7), 3: (0.2, 0.8), 4: (0.15, 0.85), 5: (0.1, 0.9)}
-        lo, hi = spacing.get(n, (0.1, 0.9))
-        return list(np.linspace(lo, hi, n))
+    Each token gets `animation-delay: {80 + idx*90}ms`.  The CSS fill-mode
+    'both' keeps every token invisible at opacity:0 (from the keyframe 0%)
+    until its delay fires — that's the cascade effect described in the design.
+    """
+    # y% from top: FWD at top (attacking), GKP at bottom
+    row_y = {"FWD": 13, "MID": 38, "DEF": 63, "GKP": 86}
 
-    for pos, y in row_y.items():
+    player_tokens = []
+    idx = 0
+
+    for pos in ["GKP", "DEF", "MID", "FWD"]:
         pos_players = squad_df[squad_df["position"] == pos].reset_index(drop=True)
         n = len(pos_players)
         if n == 0:
             continue
-        xs = row_xs(n)
 
-        for i, (_, player) in enumerate(pos_players.iterrows()):
-            name      = player["web_name"]
-            pts       = player["predicted_pts"]
-            cost      = player["now_cost"]
-            team_name = str(player.get("team_name", ""))
-            color     = POS_COLOUR[pos]
-            x         = xs[i]
+        xs    = _row_xs_pct(n)
+        y_pct = row_y[pos]
+        fill  = POS_COLOUR[pos]
+        txt   = POS_TEXT[pos]
 
-            badge = " (C)" if name == captain_name else (" (V)" if name == vice_name else "")
+        for i, (_, p) in enumerate(pos_players.iterrows()):
+            name    = p["web_name"]
+            pts     = p["predicted_pts"]
+            team    = str(p.get("team_name", ""))[:3].upper()
+            is_cap  = (name == captain_name)
+            is_vice = (name == vice_name)
 
-            # Truncate long names so labels don't overflow into neighbours
-            display_name = name if len(name) <= 11 else name[:10] + "."
+            delay      = 80 + idx * 90   # ms — first player at 80ms, then +90ms each
+            idx       += 1
 
-            # Player dot
-            fig.add_trace(go.Scatter(
-                x=[x], y=[y],
-                mode="markers",
-                marker={"size": 30, "color": color, "line": {"color": "white", "width": 2}},
-                hovertemplate=(
-                    f"<b>{name}{badge}</b><br>"
-                    f"Pred: {pts:.2f} pts<br>"
-                    f"Cost: £{cost:.1f}m<extra></extra>"
+            jersey_cls = "player-jersey" + (" captain" if is_cap else " vice" if is_vice else "")
+            disp_name  = name if len(name) <= 11 else name[:10] + "."
+
+            player_tokens.append(html.Div([
+                html.Div(
+                    team,
+                    className=jersey_cls,
+                    style={"background": fill, "color": txt},
                 ),
-            ))
+                html.Div(disp_name, className="player-name"),
+                html.Div(f"{pts:.1f}", className="player-pts"),
+            ], className="pitch-player enter", style={
+                "left":              f"{xs[i]}%",
+                "top":               f"{y_pct}%",
+                "animationDelay":    f"{delay}ms",
+                "animationFillMode": "both",   # stays at opacity:0 during delay
+            }))
 
-            # Name label — sits just above the dot, no background box to avoid clipping
-            fig.add_annotation(
-                x=x, y=y + 0.055,
-                text=f"<b>{display_name}{badge}</b>",
-                showarrow=False,
-                font={"color": TEXT, "size": 8.5},
-                bgcolor="rgba(0,0,0,0.6)",
-                borderpad=2,
-                yanchor="bottom",
-            )
+    # ── Pitch line overlays ────────────────────────────────────────────────
+    lines = html.Div([
+        html.Div(className="pl-border"),    # outer rectangle
+        html.Div(className="pl-halfway"),   # halfway line
+        html.Div(className="pl-circle"),    # centre circle
+        html.Div(className="pl-pen-top"),   # top penalty area
+        html.Div(className="pl-pen-bot"),   # bottom penalty area
+    ])
 
-            # Team · pts on a single line below the dot
-            fig.add_annotation(
-                x=x, y=y - 0.055,
-                text=f"{team_name}  {pts:.1f}pts",
-                showarrow=False,
-                font={"color": "#ddd", "size": 8},
-                yanchor="top",
-            )
-
-    return fig
+    return html.Div([lines, *player_tokens], className="pitch-wrap")
 
 
 # ── Squad table ───────────────────────────────────────────────────────────────
 
-def _squad_table(squad_df, captain_name: str) -> dbc.Table:
+def _squad_table(squad_df, captain_name: str) -> html.Table:
     rows = []
     for pos in ["GKP", "DEF", "MID", "FWD"]:
         pos_players = squad_df[squad_df["position"] == pos]
         for _, row in pos_players.iterrows():
-            cap = " (C)" if row["web_name"] == captain_name else ""
+            name = row["web_name"]
+            cap  = " (C)" if name == captain_name else ""
             rows.append(html.Tr([
-                html.Td(dbc.Badge(row["position"], color=POS_BADGE.get(row["position"], "secondary"))),
-                html.Td(f'{row["web_name"]}{cap}',
-                        style={"fontWeight": "bold" if cap else "normal", "color": TEXT}),
-                html.Td(row.get("team_name", ""), style={"color": "#aaa"}),
-                html.Td(f'£{row["now_cost"]:.1f}m', style={"color": "#aaa"}),
-                html.Td(f'{row["predicted_pts"]:.2f}',
-                        style={"color": GREEN, "fontWeight": "bold"}),
+                html.Td(html.Span(pos, className=f"pos-pill pos-{pos}")),
+                html.Td(
+                    f"{name}{cap}",
+                    style={"fontWeight": 500 if cap else "normal"},
+                ),
+                html.Td(row.get("team_name", ""), style={"color": INK_3}),
+                html.Td(f'£{row["now_cost"]:.1f}m', className="right mono",
+                        style={"color": INK_3}),
+                html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",
+                        style={"color": ACCENT, "fontWeight": 600}),
             ]))
 
-    return dbc.Table(
+    return html.Table(
         [
-            html.Thead(html.Tr(
-                [html.Th(h) for h in ["Pos", "Player", "Club", "Cost", "Pred. pts"]],
-                style={"color": TEXT},
-            )),
+            html.Thead(html.Tr([
+                html.Th("Pos"), html.Th("Player"), html.Th("Club"),
+                html.Th("Cost", className="right"),
+                html.Th("Pred. pts", className="right"),
+            ])),
             html.Tbody(rows),
         ],
-        bordered=False, hover=True, responsive=True, size="sm",
-        style={"backgroundColor": CARD},
+        className="data",
     )
 
 
 # ── Page layout ───────────────────────────────────────────────────────────────
 
-layout = dbc.Container([
+layout = html.Div([
 
-    dbc.Row(dbc.Col([
-        html.H2("Squad Optimizer", className="fw-bold mb-0"),
-        html.P([
-            "Integer Linear Programming selects the best 15-man squad or starting XI "
-            "within the £100m FPL budget.  ",
-            html.Span(
-                f"Predicting GW {get_latest_gw() + 1}",
-                style={"color": GREEN, "fontWeight": "bold"},
-            ),
-            html.Span(
-                f"  ·  based on GW {get_latest_gw()} data",
-                className="text-muted",
+    # ── Page header ──────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div("Actions · Optimizer", className="page-eyebrow"),
+            html.H1("Squad Optimizer", className="page-title serif"),
+            html.P(
+                "Integer Linear Programming selects the best 15-man squad or starting XI "
+                "within the £100m FPL budget and 3-per-club cap.",
+                className="page-desc",
             ),
         ]),
-        html.Hr(style={"borderColor": "#444"}),
-    ])),
+        html.Div([
+            html.Span([
+                "predicting ",
+                html.Strong(f"GW {get_latest_gw() + 1}"),
+            ]),
+            html.Span([
+                "based on GW ", html.Strong(str(get_latest_gw())), " data",
+            ]),
+        ], className="page-head-meta"),
+    ], className="page-head"),
 
-    # Controls
-    dbc.Row([
-        dbc.Col([
-            html.Label("Squad type", className="text-muted mb-1"),
+    # ── Controls ─────────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div("Squad type", className="control-label"),
             dbc.RadioItems(
                 id="opt-squad-type",
                 options=[
-                    {"label": "Full squad (15 players)", "value": "squad"},
-                    {"label": "Starting XI (11 players)", "value": "xi"},
+                    {"label": "Full squad (15)", "value": "squad"},
+                    {"label": "Starting XI (11)", "value": "xi"},
                 ],
                 value="squad",
                 inline=True,
-                className="mb-3",
             ),
-            dbc.Button(
-                "Optimise Squad",
-                id="opt-run-btn",
-                color="success",
-                size="lg",
-                n_clicks=0,
-            ),
-        ], md=8),
-    ], className="mb-4"),
+        ], className="control-group"),
+        html.Button(
+            "Run optimizer",
+            id="opt-run-btn",
+            n_clicks=0,
+            className="btn-primary-custom",
+            style={"alignSelf": "flex-end"},
+        ),
+    ], className="controls-bar"),
 
-    # Loading wrapper around results
+    # ── Results ──────────────────────────────────────────────
     dcc.Loading(
         id="opt-loading",
         type="circle",
-        color=GREEN,
+        color=ACCENT,
         children=html.Div(id="opt-results"),
     ),
 
-], fluid=True, className="py-4 px-3")
+], className="page")
 
 
-# ── Callback ──────────────────────────────────────────────────────────────────
+# ── Callback ─────────────────────────────────────────────────────────────────
 
 @callback(
     Output("opt-results", "children"),
@@ -208,17 +202,16 @@ layout = dbc.Container([
     prevent_initial_call=True,
 )
 def run_optimizer(n_clicks, squad_type):
-    players = get_available_players()
+    players   = get_available_players()
     optimizer = get_optimizer()
 
     if squad_type == "xi":
-        result = optimizer.select_starting_xi(players, budget=100.0)
-        squad_df   = result.get("xi", result.get("squad"))
-        formation  = result.get("formation", "")
-        title_extra = f"  ·  Formation: {formation}"
+        result      = optimizer.select_starting_xi(players, budget=100.0)
+        squad_df    = result.get("xi", result.get("squad"))
+        title_extra = f"  ·  Formation: {result.get('formation', '')}"
     else:
-        result = optimizer.select_squad(players, budget=100.0)
-        squad_df   = result["squad"]
+        result      = optimizer.select_squad(players, budget=100.0)
+        squad_df    = result["squad"]
         title_extra = ""
 
     if result["status"] != "Optimal":
@@ -229,42 +222,53 @@ def run_optimizer(n_clicks, squad_type):
     total_cost = result["total_cost"]
     pred_total = result["predicted_total"]
 
-    # Summary bar
-    summary = dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Total cost", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(f"£{total_cost:.1f}m", style={"color": ORANGE, "fontWeight": "bold"}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Predicted total", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(f"{pred_total:.2f} pts", style={"color": GREEN, "fontWeight": "bold"}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Captain", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(captain, style={"color": TEXT, "fontWeight": "bold"}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.P("Vice-captain", className="text-muted mb-1", style={"fontSize": "0.8rem"}),
-            html.H4(vice, style={"color": TEXT}),
-        ]), style={"backgroundColor": CARD}), xs=6, md=3),
-    ], className="g-3 mb-4")
+    # KPI summary
+    summary = html.Div([
+        html.Div([
+            html.Div("Total cost", className="kpi-label"),
+            html.Div([f"£{total_cost:.1f}", html.Span("m", className="unit")],
+                     className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Predicted total", className="kpi-label"),
+            html.Div([f"{pred_total:.1f}", html.Span("pts", className="unit")],
+                     className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Captain", className="kpi-label"),
+            html.Div(captain, className="kpi-value serif-val"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Vice-captain", className="kpi-label"),
+            html.Div(vice, className="kpi-value serif-val"),
+        ], className="kpi"),
+    ], className="squad-summary-grid", style={"marginBottom": "20px"})
 
-    # Pitch + table side by side
-    pitch_and_table = dbc.Row([
-        dbc.Col(
-            dcc.Graph(
-                figure=_build_pitch_figure(squad_df, captain, vice),
-                config={"displayModeBar": False},
-            ),
-            md=6,
+    # Pitch + table
+    squad_label = "15-man Squad" if squad_type == "squad" else f"Starting XI{title_extra}"
+
+    pitch_and_table = html.Div([
+        # HTML/CSS animated pitch — flex: 1 side
+        html.Div(
+            _build_html_pitch(squad_df, captain, vice),
+            style={"flex": "1 1 0", "minWidth": 0},
         ),
-        dbc.Col([
-            html.H5(
-                f"{'15-man Squad' if squad_type == 'squad' else 'Starting XI'}{title_extra}",
-                className="mb-3",
+
+        # Squad table — flex: 1 side
+        html.Div([
+            html.Div([
+                html.Div(squad_label, className="card-title"),
+                html.Span(
+                    f"£{total_cost:.1f}m total · {pred_total:.1f} pred pts",
+                    className="tag",
+                ),
+            ], className="card-hd"),
+            html.Div(
+                _squad_table(squad_df, captain),
+                className="card-body flush",
             ),
-            _squad_table(squad_df, captain),
-        ], md=6),
-    ])
+        ], className="card", style={"flex": "1 1 0"}),
+
+    ], style={"display": "flex", "gap": "18px", "alignItems": "flex-start"})
 
     return html.Div([summary, pitch_and_table])
