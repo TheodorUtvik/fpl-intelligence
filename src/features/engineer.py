@@ -65,6 +65,7 @@ class FeatureEngineer:
         """
         df = merged_df.copy()
         df = self._fix_dtypes(df)
+        df = self._aggregate_player_round(df)
         df = self._rolling_form(df)
         df = self._rolling_xg(df)
         df = self._fixture_features(df, fixtures_df)
@@ -90,6 +91,36 @@ class FeatureEngineer:
 
         df = df.sort_values(['player_id', 'round']).reset_index(drop=True)
         return df
+
+    def _aggregate_player_round(self, df: pd.DataFrame) -> pd.DataFrame:
+        before = len(df)
+        df = df.sort_values(['player_id', 'round', 'kickoff_time']).reset_index(drop=True)
+
+        sum_cols = [
+            'total_points', 'minutes', 'goals_scored', 'assists', 'clean_sheets',
+            'goals_conceded', 'own_goals', 'penalties_saved', 'penalties_missed',
+            'yellow_cards', 'red_cards', 'saves', 'bonus', 'bps',
+            'influence', 'creativity', 'threat', 'ict_index',
+            'xG', 'xA', 'shots', 'key_passes', 'npxG', 'xGChain', 'xGBuildup', 'us_minutes',
+        ]
+        last_cols = ['value', 'selected', 'now_cost', 'kickoff_time']
+        first_cols = ['web_name', 'position', 'team']
+
+        agg = {}
+        for col in sum_cols:
+            if col in df.columns:
+                agg[col] = 'sum'
+        for col in last_cols:
+            if col in df.columns:
+                agg[col] = 'last'
+        for col in first_cols:
+            if col in df.columns:
+                agg[col] = 'first'
+
+        out = df.groupby(['player_id', 'round'], as_index=False).agg(agg)
+        if len(out) < before:
+            logger.info(f"Collapsed merged rows from {before} to {len(out)} on (player_id, round)")
+        return out
 
     def _rolling_mean(self, group: pd.DataFrame, col: str, window: int) -> pd.Series:
         return group[col].shift(1).rolling(window, min_periods=1).mean()
@@ -169,35 +200,6 @@ class FeatureEngineer:
 
         fixture_lookup = pd.concat([home, away], ignore_index=True)
 
-        # Next gameweek fixture
-        df['next_round'] = df['round'] + 1
-        next_fix = fixture_lookup.rename(columns={
-            'round': 'next_round', 'fdr': 'fdr_next',
-            'is_home': 'is_home_next', 'opponent_id': 'next_opponent_id',
-        })
-        df = df.merge(
-            next_fix[['next_round', 'team_id', 'fdr_next', 'is_home_next', 'next_opponent_id']],
-            left_on=['next_round', 'team'], right_on=['next_round', 'team_id'],
-            how='left',
-        ).drop(columns=['team_id'])
-
-        df['has_fixture'] = df['fdr_next'].notna().astype(int)
-        df['fdr_next'] = df['fdr_next'].fillna(3.0)
-        df['is_home_next'] = df['is_home_next'].fillna(0).astype(int)
-
-        # FDR next 3 fixtures
-        def _fdr3(player_df):
-            results = []
-            for _, row in player_df.iterrows():
-                future = fixture_lookup[
-                    (fixture_lookup['round'].isin([row['round'] + 1, row['round'] + 2, row['round'] + 3])) &
-                    (fixture_lookup['team_id'] == row['team'])
-                ]['fdr']
-                results.append(future.mean() if not future.empty else np.nan)
-            return pd.Series(results, index=player_df.index)
-
-        df['fdr_next3'] = df.groupby('player_id', group_keys=False).apply(_fdr3).fillna(3.0)
-
         # Opponent goals conceded rolling average
         finished = fixtures[fixtures['finished'] == True].copy()
         hc = finished[['event', 'team_h', 'team_a_score']].rename(
@@ -211,13 +213,56 @@ class FeatureEngineer:
         tc['opp_goals_conceded_avg'] = tc.groupby('team_id')['gc'].transform(
             lambda x: x.shift(1).rolling(5, min_periods=1).mean()
         )
-        opp_lookup = tc[['round', 'team_id', 'opp_goals_conceded_avg']].rename(
-            columns={'round': 'next_round', 'team_id': 'next_opponent_id'}
+        opp_lookup = tc[['round', 'team_id', 'opp_goals_conceded_avg']].rename(columns={'round': 'next_round'})
+
+        # Next gameweek features aggregated to one row per team in next round.
+        df['next_round'] = df['round'] + 1
+        next_fix = fixture_lookup.rename(columns={'round': 'next_round'})
+        next_fix = next_fix.merge(
+            opp_lookup.rename(columns={'team_id': 'opponent_id'}),
+            on=['next_round', 'opponent_id'],
+            how='left',
         )
-        df = df.merge(opp_lookup, on=['next_round', 'next_opponent_id'], how='left')
-        df['opp_goals_conceded_avg'] = df['opp_goals_conceded_avg'].fillna(
-            df['opp_goals_conceded_avg'].median()
+        next_team = (
+            next_fix
+            .groupby(['next_round', 'team_id'], as_index=False)
+            .agg({
+                'fdr': 'mean',
+                'is_home': 'mean',
+                'opp_goals_conceded_avg': 'mean',
+            })
+            .rename(columns={
+                'fdr': 'fdr_next',
+                'is_home': 'is_home_next',
+            })
         )
+        next_team['has_fixture'] = 1
+
+        df = df.merge(
+            next_team[['next_round', 'team_id', 'fdr_next', 'is_home_next', 'opp_goals_conceded_avg', 'has_fixture']],
+            left_on=['next_round', 'team'], right_on=['next_round', 'team_id'],
+            how='left',
+        ).drop(columns=['team_id'])
+
+        df['has_fixture'] = df['has_fixture'].fillna(0).astype(int)
+        df['fdr_next'] = df['fdr_next'].fillna(3.0)
+        df['is_home_next'] = df['is_home_next'].fillna(0.0)
+
+        median_opp_gc = df['opp_goals_conceded_avg'].median()
+        df['opp_goals_conceded_avg'] = df['opp_goals_conceded_avg'].fillna(median_opp_gc)
+
+        # FDR next 3 fixtures
+        def _fdr3(player_df):
+            results = []
+            for _, row in player_df.iterrows():
+                future = fixture_lookup[
+                    (fixture_lookup['round'].isin([row['round'] + 1, row['round'] + 2, row['round'] + 3])) &
+                    (fixture_lookup['team_id'] == row['team'])
+                ]['fdr']
+                results.append(future.mean() if not future.empty else np.nan)
+            return pd.Series(results, index=player_df.index)
+
+        df['fdr_next3'] = df.groupby('player_id', group_keys=False).apply(_fdr3).fillna(3.0)
         return df
 
     def _value_features(self, df: pd.DataFrame) -> pd.DataFrame:
