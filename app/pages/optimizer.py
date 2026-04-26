@@ -8,6 +8,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html  # dcc kept for dcc.Loading
 
 from app.data_loader import get_available_players, get_latest_gw, get_optimizer
+from app.components.club_badge import render_club_badge
 
 dash.register_page(__name__, path="/optimizer", name="Optimizer")
 
@@ -113,7 +114,7 @@ def _squad_table(squad_df, captain_name: str) -> html.Table:
                     f"{name}{cap}",
                     style={"fontWeight": 500 if cap else "normal"},
                 ),
-                html.Td(row.get("team_name", ""), style={"color": INK_3}),
+                html.Td(render_club_badge(row.get("team_name", "")), style={"color": INK_3}),
                 html.Td(f'£{row["now_cost"]:.1f}m', className="right mono",
                         style={"color": INK_3}),
                 html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",

@@ -994,3 +994,38 @@ textarea.form-control {
   border-radius: 2px;
   line-height: 1.5;
 }
+
+.club-badge-wrap {
+  display: inline-grid;
+  grid-template-columns: 3ch 14px;
+  align-items: center;
+  column-gap: 6px;
+  line-height: 1;
+}
+
+.club-badge-slot {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.club-badge-img {
+  width: 13px !important;
+  height: 13px !important;
+  min-width: 13px;
+  min-height: 13px;
+  max-width: 13px;
+  max-height: 13px;
+  object-fit: contain;
+  vertical-align: middle;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.club-badge-code {
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+}
