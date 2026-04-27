@@ -289,5 +289,10 @@ class FeatureEngineer:
     def _select_and_filter(self, df: pd.DataFrame) -> pd.DataFrame:
         cols = [c for c in FEATURE_COLS if c in df.columns]
         out = df[cols].copy()
-        out = out.dropna(subset=['pts_next_gw', 'rolling_pts_3gw'])
+        # Drop only rows missing key features — NOT pts_next_gw.
+        # Round N's pts_next_gw is null when GW N+1 hasn't been played yet
+        # (i.e. the current/latest round). We KEEP those rows so inference
+        # can predict the upcoming GW. The training step already gates on
+        # `round < latest_complete_gw`, so null targets never enter training.
+        out = out.dropna(subset=['rolling_pts_3gw'])
         return out

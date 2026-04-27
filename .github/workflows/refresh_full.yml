@@ -28,9 +28,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Stage 2 — full pipeline
+        id: pipeline
         run: python scripts/check_and_run_full_pipeline.py
 
       - name: Commit updated data, model and predictions
+        if: steps.pipeline.outputs.ran == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: Stage 2 — full pipeline refresh [skip ci]"
