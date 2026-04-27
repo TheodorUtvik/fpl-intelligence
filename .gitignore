@@ -7,6 +7,8 @@ __pycache__/
 # Data — raw and processed files are not committed
 data/raw/*.parquet
 data/processed/*.parquet
+# Exception: hand-curated FPL↔Understat ID map must live in the repo
+!data/processed/player_id_map.parquet
 
 # Model artefacts
 models/*.json
