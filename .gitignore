@@ -4,11 +4,13 @@ __pycache__/
 *.egg-info/
 .DS_Store
 
-# Data — raw and processed files are not committed
-data/raw/*.parquet
+# Auto-generated processed files are not committed (rebuilt by Stage 2)
 data/processed/*.parquet
 # Exception: hand-curated FPL↔Understat ID map must live in the repo
 !data/processed/player_id_map.parquet
+
+# Raw FPL + Understat parquets ARE committed — Stage 1 fetches and commits
+# them; Stage 2 reads them on a clean CI runner. Do not gitignore these.
 
 # Model artefacts
 models/*.json
