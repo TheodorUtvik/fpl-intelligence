@@ -90,12 +90,24 @@ def get_players_with_predictions() -> pd.DataFrame:
 
     latest_df = features[features["round"] == latest_gw].copy()
     latest_df["predicted_pts"] = predictor.predict(latest_df)
+    if "games_played" in latest_df.columns:
+        latest_df = (
+            latest_df
+            .sort_values(["player_id", "games_played", "predicted_pts"])
+            .drop_duplicates(subset=["player_id"], keep="last")
+        )
+    else:
+        latest_df = (
+            latest_df
+            .sort_values(["player_id", "predicted_pts"])
+            .drop_duplicates(subset=["player_id"], keep="last")
+        )
 
     fpl_meta = fpl[["id", "web_name", "position", "team", "status", "now_cost"]].rename(
         columns={"id": "player_id"}
     )
 
-    pool = latest_df[["player_id", "value", "predicted_pts",
+    pool = latest_df[["player_id", "value", "predicted_pts", "games_played",
                        "rolling_pts_3gw", "rolling_xg_3gw", "rolling_xa_3gw",
                        "ownership_pct", "fdr_next"]].copy()
     pool.rename(columns={"value": "now_cost"}, inplace=True)
@@ -140,6 +152,20 @@ def load_predictions_for_gw(predict_gw: int) -> pd.DataFrame:
         raise FileNotFoundError(f"No prediction snapshot for GW{predict_gw}")
 
     df = pd.read_parquet(path)
+    if "games_played" in df.columns:
+        df = (
+            df
+            .sort_values(["player_id", "games_played", "predicted_pts"])
+            .drop_duplicates(subset=["player_id"], keep="last")
+            .reset_index(drop=True)
+        )
+    else:
+        df = (
+            df
+            .sort_values(["player_id", "predicted_pts"])
+            .drop_duplicates(subset=["player_id"], keep="last")
+            .reset_index(drop=True)
+        )
     teams = load_teams()[["id", "short_name"]].rename(
         columns={"id": "team", "short_name": "team_name"}
     )

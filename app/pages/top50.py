@@ -13,6 +13,7 @@ from app.data_loader import (
     get_prediction_history_gws,
     load_predictions_for_gw,
 )
+from app.components.club_badge import render_club_badge
 
 dash.register_page(__name__, path="/top50", name="Top 50")
 
@@ -156,7 +157,7 @@ def update_table(selected_gw, pos_filter, sort_col):
                 )
             ),
             html.Td(html.Span(pos, className=f"pos-pill pos-{pos}")),
-            html.Td(row.get("team_name", ""), style={"color": INK_3}),
+            html.Td(render_club_badge(row.get("team_name", "")), style={"color": INK_3}),
             html.Td(f'£{row["now_cost"]:.1f}m', className="right mono",
                     style={"color": INK_3}),
             html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",

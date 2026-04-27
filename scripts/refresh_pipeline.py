@@ -194,8 +194,19 @@ def engineer_and_train(merged_df: pd.DataFrame, fixtures_df: pd.DataFrame) -> No
     log.info(f"  Features saved: {features.shape}  |  latest complete GW: {latest_gw}  →  predicting GW {predict_gw}")
 
     log.info("=== Step 5: Retraining model ===")
+    train_df = features[features["round"] < latest_gw].copy()
+    if train_df.empty:
+        log.warning(
+            "  Training set is empty after leakage guard (round < latest_complete_gw). "
+            "Skipping model training and snapshot."
+        )
+        return
+    log.info(
+        f"  Training rows: {len(train_df)} (rounds < {latest_gw}) "
+        f"| Inference rows: {len(features[features['round'] == latest_gw])} (round == {latest_gw})"
+    )
     predictor = FPLPredictor(models_dir=MODELS)
-    predictor.train(features)
+    predictor.train(train_df)
     predictor.save()
     log.info("  Model saved.")
 

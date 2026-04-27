@@ -54,6 +54,28 @@ class FPLOptimizer:
     def __init__(self, budget: float = 100.0):
         self.budget = budget
 
+    def _prepare_player_pool(self, players_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Return one row per player_id.
+
+        If a player appears multiple times, keep the latest state row for that
+        player (highest games_played when available), so each real player can
+        only be selected once.
+        """
+        df = players_df.copy()
+        required = ["player_id", "web_name", "position", "team", "now_cost", "predicted_pts"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"players_df missing required columns: {missing}")
+
+        df = df.dropna(subset=["player_id", "position", "team", "now_cost", "predicted_pts"])
+        df["player_id"] = df["player_id"].astype(int)
+        if "games_played" in df.columns:
+            df = df.sort_values(["player_id", "games_played", "predicted_pts"])
+        else:
+            df = df.sort_values(["player_id", "predicted_pts"])
+        return df.drop_duplicates(subset=["player_id"], keep="last").reset_index(drop=True)
+
     # ------------------------------------------------------------------
     # Squad selection
     # ------------------------------------------------------------------
@@ -84,7 +106,7 @@ class FPLOptimizer:
             status       : str          — 'Optimal' or 'Infeasible'
         """
         budget = budget or self.budget
-        df = players_df.copy().reset_index(drop=True)
+        df = self._prepare_player_pool(players_df).reset_index(drop=True)
         players = df.index.tolist()
 
         prob = LpProblem("FPL_Squad_Selection", LpMaximize)
@@ -193,7 +215,7 @@ class FPLOptimizer:
             status      : str
         """
         budget = budget or self.budget
-        df = players_df.copy().reset_index(drop=True)
+        df = self._prepare_player_pool(players_df).reset_index(drop=True)
         players = df.index.tolist()
 
         prob = LpProblem("FPL_XI_Selection", LpMaximize)
@@ -312,7 +334,7 @@ class FPLOptimizer:
             transfers_out, transfers_in, gross_gain, hit, net_gain,
             cost_change, is_recommended
         """
-        df = players_df.copy()
+        df = self._prepare_player_pool(players_df)
         current = df[df['player_id'].isin(current_squad_ids)].copy()
         available = df[~df['player_id'].isin(current_squad_ids)].copy()
 

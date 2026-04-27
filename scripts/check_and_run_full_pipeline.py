@@ -14,6 +14,7 @@ Usage:
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -30,6 +31,14 @@ log = logging.getLogger(__name__)
 
 STATE_FILE   = ROOT / "data" / "pipeline_state.json"
 UNDERSTAT_DELAY_HOURS = 48
+
+
+def set_gha_output(key: str, value: str) -> None:
+    """Write a step output for GitHub Actions (no-op outside CI)."""
+    gha_output = os.getenv("GITHUB_OUTPUT")
+    if gha_output:
+        with open(gha_output, "a") as fh:
+            fh.write(f"{key}={value}\n")
 
 
 def load_state() -> dict:
@@ -56,11 +65,13 @@ def main() -> None:
     # Gate 1 — has Stage 1 processed a GW that Stage 2 hasn't?
     if fpl_gw <= full_gw:
         log.info("No new FPL data to process. Nothing to do.")
+        set_gha_output("ran", "false")
         sys.exit(0)
 
     # Gate 2 — has 48 hours elapsed since Stage 1?
     if fetched_at_str is None:
         log.warning("fpl_fetched_at is missing. Cannot check delay. Skipping.")
+        set_gha_output("ran", "false")
         sys.exit(0)
 
     fetched_at = datetime.fromisoformat(fetched_at_str)
@@ -73,6 +84,7 @@ def main() -> None:
             f"Waiting for {UNDERSTAT_DELAY_HOURS}h Understat delay "
             f"({remaining.total_seconds()/3600:.1f}h remaining). Nothing to do."
         )
+        set_gha_output("ran", "false")
         sys.exit(0)
 
     log.info(f"Both gates passed. Running full pipeline for GW{fpl_gw}...")
@@ -133,6 +145,7 @@ def main() -> None:
     state["full_pipeline_gw"] = fpl_gw
     save_state(state)
     log.info(f"pipeline_state.json updated: full_pipeline_gw={fpl_gw}")
+    set_gha_output("ran", "true")
     log.info("Stage 2 complete.")
 
 

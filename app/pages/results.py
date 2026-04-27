@@ -20,6 +20,7 @@ from app.data_loader import (
     load_features,
     load_teams,
 )
+from app.components.club_badge import render_club_badge
 
 dash.register_page(__name__, path="/results", name="GW Results")
 
@@ -70,9 +71,10 @@ def _summary_kpis(df: pd.DataFrame) -> html.Div:
     if df.empty:
         return html.Div()
 
+    top20 = df.head(20).copy()
     mae      = df["diff"].abs().mean()
     within2  = (df["diff"].abs() <= 2).mean() * 100
-    best_idx = df["diff"].abs().idxmin()
+    best_idx = top20["diff"].abs().idxmin()
     miss_idx = df["diff"].abs().idxmax()
     best     = df.loc[best_idx]
     miss     = df.loc[miss_idx]
@@ -89,7 +91,7 @@ def _summary_kpis(df: pd.DataFrame) -> html.Div:
                      className="kpi-value mono"),
         ], className="kpi"),
         html.Div([
-            html.Div("Best call", className="kpi-label"),
+            html.Div("Best call (top 20)", className="kpi-label"),
             html.Div(best["web_name"], className="kpi-value serif-val"),
             html.Div(
                 [html.Span(f"{best['diff']:+.1f} pts", className="up mono")],
@@ -124,7 +126,7 @@ def _results_table(df: pd.DataFrame) -> html.Table:
                 )
             ),
             html.Td(html.Span(pos, className=f"pos-pill pos-{pos}")),
-            html.Td(row.get("team_name", ""), style={"color": INK_3}),
+            html.Td(render_club_badge(row.get("team_name", "")), style={"color": INK_3}),
             html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",
                     style={"color": ACCENT}),
             html.Td(f'{row["actual_pts"]:.0f}', className="right mono",
