@@ -12,11 +12,10 @@ data/processed/*.parquet
 # Raw FPL + Understat parquets ARE committed — Stage 1 fetches and commits
 # them; Stage 2 reads them on a clean CI runner. Do not gitignore these.
 
-# Model artefacts
-models/*.json
-models/*.pkl
+# Model artefacts — PNGs are visualisations only, not needed by CI
 models/*.png
-best_params.json
+# model weights, explainer and feature list ARE committed (Stage 2 rebuilds them)
+# models/*.json and models/*.pkl are intentionally NOT ignored
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
