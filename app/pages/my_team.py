@@ -67,7 +67,7 @@ def _build_pitch(starters: list[dict], selected_id: int | None) -> html.Div:
             if is_cap:    jersey_cls += " captain"
             elif is_vice: jersey_cls += " vice"
 
-            token_cls = "pitch-player mt-player"
+            token_cls = "pitch-player enter mt-player"
             if is_sel:                  token_cls += " mt-selected"
             if status in ("i", "d", "s"): token_cls += " mt-status-warn"
 
@@ -230,9 +230,19 @@ def _import_form() -> html.Div:
         [
             html.Div("Import your squad", className="setup-title"),
             html.P(
-                "Enter your FPL team ID to auto-load your 15-man squad. "
-                "Find it in the URL when viewing your team: "
-                "fantasy.premierleague.com/entry/XXXXXXX/event/XX",
+                [
+                    "Enter your FPL team ID to auto-load your 15-man squad. "
+                    "Find it in the URL when viewing your team on the FPL website: ",
+                    html.Br(),
+                    html.Span(
+                        "fantasy.premierleague.com/entry/",
+                        className="mono",
+                        style={"color": ACCENT},
+                    ),
+                    html.Span("XXXXXXX", className="mono",
+                              style={"color": ACCENT, "fontWeight": 700}),
+                    html.Span("/event/XX", className="mono", style={"color": ACCENT}),
+                ],
                 className="setup-desc",
             ),
             html.Div(
@@ -242,16 +252,22 @@ def _import_form() -> html.Div:
                         dbc.Input(
                             id="mt-team-id-input",
                             type="number",
+                            min=1,
                             placeholder="e.g. 11405847",
                             className="form-control",
                         ),
                     ], className="control-group"),
                     html.Div([
                         html.Div("Free transfers", className="control-label"),
-                        dbc.Select(
+                        dbc.Input(
                             id="mt-ft-select",
-                            options=[{"label": "1", "value": 1}, {"label": "2", "value": 2}],
+                            type="number",
+                            min=0,
+                            max=10,
+                            step=1,
                             value=1,
+                            className="form-control",
+                            style={"width": "80px"},
                         ),
                     ], className="control-group"),
                     html.Button(
@@ -509,12 +525,27 @@ def import_team(_, team_id, free_transfers, refresh_count):
     if not team_id:
         return dash.no_update, dbc.Alert("Enter your FPL team ID.", color="warning")
 
+    team_id = int(team_id)
+    if team_id < 1000:
+        return dash.no_update, dbc.Alert(
+            "That doesn't look like a valid FPL team ID (should be a large number, "
+            "e.g. 11405847). Find yours in the URL on the FPL website.",
+            color="warning",
+        )
+
     from app.team_manager import fetch_squad_from_fpl, save_team
     try:
         gw   = get_latest_gw()
-        data = fetch_squad_from_fpl(int(team_id), gw)
+        data = fetch_squad_from_fpl(team_id, gw)
     except Exception as e:
         return dash.no_update, dbc.Alert(f"Could not fetch team: {e}", color="danger")
+
+    if len(data["picks"]) != 15:
+        return dash.no_update, dbc.Alert(
+            f"Unexpected response from FPL (got {len(data['picks'])} players instead of 15). "
+            "Double-check your team ID.",
+            color="danger",
+        )
 
     all_p = get_players_with_predictions()
     price_map = all_p.set_index("player_id")["now_cost"].to_dict()
