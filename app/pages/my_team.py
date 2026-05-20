@@ -240,9 +240,9 @@ def _import_form() -> html.Div:
                         dbc.Input(
                             id="mt-team-id-input",
                             type="number",
-                            min=1000,
+                            min=1,
                             placeholder="e.g. 11405847",
-                            className="form-control",
+                            className="form-control no-spinner",
                         ),
                     ], className="control-group"),
                     html.Div([
@@ -541,13 +541,6 @@ def import_team(_, team_id, free_transfers, refresh_count):
         return dash.no_update, dbc.Alert("Enter your FPL team ID.", color="warning")
 
     team_id = int(team_id)
-    if team_id < 1000:
-        return dash.no_update, dbc.Alert(
-            "That ID looks too small — FPL team IDs are typically 7+ digits. "
-            "Find yours in the URL: fantasy.premierleague.com/entry/XXXXXXX/event/XX",
-            color="warning",
-        )
-
     from app.team_manager import fetch_squad_from_fpl, save_team
     try:
         gw   = get_latest_gw()
