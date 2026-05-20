@@ -251,18 +251,22 @@ class FeatureEngineer:
         median_opp_gc = df['opp_goals_conceded_avg'].median()
         df['opp_goals_conceded_avg'] = df['opp_goals_conceded_avg'].fillna(median_opp_gc)
 
-        # FDR next 3 fixtures
-        def _fdr3(player_df):
-            results = []
-            for _, row in player_df.iterrows():
-                future = fixture_lookup[
-                    (fixture_lookup['round'].isin([row['round'] + 1, row['round'] + 2, row['round'] + 3])) &
-                    (fixture_lookup['team_id'] == row['team'])
-                ]['fdr']
-                results.append(future.mean() if not future.empty else np.nan)
-            return pd.Series(results, index=player_df.index)
-
-        df['fdr_next3'] = df.groupby('player_id', group_keys=False).apply(_fdr3).fillna(3.0)
+        # FDR next 3 fixtures — vectorised via reverse-offset expand
+        # For each fixture at round R, it contributes to fdr_next3 for
+        # any player whose current round is R-1, R-2 or R-3.
+        fdr3_parts = []
+        for offset in [1, 2, 3]:
+            tmp = fixture_lookup[['round', 'team_id', 'fdr']].copy()
+            tmp['round'] = tmp['round'] - offset   # shift round back to "from" round
+            fdr3_parts.append(tmp)
+        fdr3_lookup = (
+            pd.concat(fdr3_parts)
+            .groupby(['round', 'team_id'], as_index=False)['fdr']
+            .mean()
+            .rename(columns={'team_id': 'team', 'fdr': 'fdr_next3'})
+        )
+        df = df.merge(fdr3_lookup, on=['round', 'team'], how='left')
+        df['fdr_next3'] = df['fdr_next3'].fillna(3.0)
         return df
 
     def _value_features(self, df: pd.DataFrame) -> pd.DataFrame:
