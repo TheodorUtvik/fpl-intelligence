@@ -272,6 +272,7 @@ def _import_form() -> html.Div:
 layout = html.Div(
     [
         dcc.Store(id="mt-selected",     data=None),
+        dcc.Store(id="mt-click-relay",  data=None),  # poll → server bridge
         dcc.Store(id="mt-refresh",      data=0),
         dcc.Store(id="mt-pending-xfer", data=None),
         dcc.Store(id="mt-sel-dummy"),    # highlight clientside callback output
@@ -367,28 +368,40 @@ dash.clientside_callback(
     Input("mt-refresh", "data"),
 )
 
-# 3. Poll every 150 ms; when a click has been queued, write it to mt-selected.
-#    Runs entirely in the browser — no server request unless a player was clicked.
+# 3. Poll every 150 ms; when a click has been queued, push it to the relay store.
+#    Writing to mt-click-relay (primary output, no allow_duplicate) guarantees that
+#    the downstream server callback fires reliably in Dash 4.
 dash.clientside_callback(
     """
-    function(n, current_selected) {
+    function(n) {
         if (window._mtClickPid === undefined || window._mtClickPid === null) {
             return window.dash_clientside.no_update;
         }
         var pid = window._mtClickPid;
         window._mtClickPid = undefined;
-        if (pid === current_selected) return null;   // second click deselects
         return pid;
     }
     """,
-    Output("mt-selected", "data", allow_duplicate=True),
+    Output("mt-click-relay", "data"),
     Input("mt-click-poll", "n_intervals"),
-    State("mt-selected", "data"),
     prevent_initial_call=True,
 )
 
 
 # ── Server callbacks ──────────────────────────────────────────────────────────
+
+@callback(
+    Output("mt-selected", "data"),          # PRIMARY writer — no allow_duplicate
+    Input("mt-click-relay", "data"),
+    State("mt-selected", "data"),
+    prevent_initial_call=True,
+)
+def on_click_relay(clicked_pid, current):
+    """Translate a relay click into a selected-player toggle."""
+    if clicked_pid is None:
+        return dash.no_update
+    return None if clicked_pid == current else clicked_pid
+
 
 def _load_enriched():
     """Load team from DB and enrich with prediction data. Returns (team, enriched) or (None, [])."""
