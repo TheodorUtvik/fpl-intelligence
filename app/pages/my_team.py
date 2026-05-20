@@ -72,7 +72,7 @@ def _build_pitch(starters: list[dict]) -> html.Div:
             if status in ("i", "d", "s"):
                 token_cls += " mt-status-warn"
 
-            tokens.append(html.Div(
+            tokens.append(html.Button(
                 [
                     html.Div(tcode, className=jersey_cls,
                              style={"background": fill, "color": txt}),
@@ -86,7 +86,6 @@ def _build_pitch(starters: list[dict]) -> html.Div:
                     "animationDelay": f"{delay}ms", "animationFillMode": "both",
                 },
                 n_clicks=0,
-                **{"data-pid": str(pid)},
             ))
 
     lines = html.Div([
@@ -116,8 +115,9 @@ def _build_bench(bench: list[dict]) -> html.Div:
         if status in ("i", "d", "s"):
             token_cls += " mt-status-warn"
 
-        tokens.append(html.Div(
+        tokens.append(html.Button(
             [
+                html.Div(pos, className="mt-pos-label"),
                 html.Div(tcode, className="player-jersey",
                          style={"background": fill, "color": txt}),
                 html.Div(disp, className="player-name"),
@@ -126,7 +126,6 @@ def _build_bench(bench: list[dict]) -> html.Div:
             id={"type": "mt-token", "index": pid},
             className=token_cls,
             n_clicks=0,
-            **{"data-pid": str(pid)},
         ))
 
     return html.Div(
@@ -312,12 +311,18 @@ layout = html.Div(
 dash.clientside_callback(
     """
     function(selected_id) {
-        document.querySelectorAll('[data-pid]').forEach(function(el) {
+        document.querySelectorAll('.mt-player, .mt-bench-token').forEach(function(el) {
             el.classList.remove('mt-selected');
         });
         if (selected_id !== null && selected_id !== undefined) {
-            var el = document.querySelector('[data-pid="' + selected_id + '"]');
-            if (el) el.classList.add('mt-selected');
+            document.querySelectorAll('.mt-player, .mt-bench-token').forEach(function(el) {
+                try {
+                    var parsed = JSON.parse(el.id);
+                    if (parsed && parsed.index == selected_id) {
+                        el.classList.add('mt-selected');
+                    }
+                } catch(e) {}
+            });
         }
         return null;
     }
@@ -427,43 +432,48 @@ def render_pitch(refresh_count):
 )
 def render_panel(selected_id, _):
     if selected_id is None:
-        return html.Div()
+        return html.Div(
+            "Click any player to see ranked replacement suggestions.",
+            className="panel-placeholder",
+        )
 
-    from app.team_manager import get_replacement_suggestions
-    team, enriched = _load_enriched()
-    if team is None:
-        return html.Div()
+    try:
+        from app.team_manager import get_replacement_suggestions
+        team, enriched = _load_enriched()
+        if team is None:
+            return html.Div()
 
-    sel_list = [p for p in enriched if p["player_id"] == selected_id]
-    if not sel_list:
-        return html.Div()
+        sel_list = [p for p in enriched if p["player_id"] == selected_id]
+        if not sel_list:
+            return html.Div()
 
-    squad_ids   = [p["player_id"] for p in enriched]
-    avail       = get_available_players()
-    suggestions = get_replacement_suggestions(
-        player_id=selected_id,
-        squad_player_ids=squad_ids,
-        bank=team["bank"],
-        players_df=avail,
-        free_transfers=team["free_transfers"],
-    )
-    return _build_panel(sel_list[0], suggestions, team["bank"], team["free_transfers"])
+        squad_ids   = [p["player_id"] for p in enriched]
+        avail       = get_available_players()
+        suggestions = get_replacement_suggestions(
+            player_id=selected_id,
+            squad_player_ids=squad_ids,
+            bank=team["bank"],
+            players_df=avail,
+            free_transfers=team["free_transfers"],
+        )
+        return _build_panel(sel_list[0], suggestions, team["bank"], team["free_transfers"])
+    except Exception as exc:
+        return html.Div(
+            f"Error loading suggestions: {exc}",
+            style={"padding": "16px", "color": "var(--bad)"},
+        )
 
 
 @callback(
     Output("mt-selected", "data"),
     Input({"type": "mt-token", "index": ALL}, "n_clicks"),
     State("mt-selected", "data"),
-    prevent_initial_call=True,
 )
 def on_player_click(n_clicks_list, current):
     from dash import ctx
-    if not ctx.triggered or not any(n for n in n_clicks_list if n):
-        return current
-    tid = ctx.triggered_id
-    if not tid:
-        return current
-    clicked = tid["index"]
+    if not ctx.triggered_id or not n_clicks_list or not any(n_clicks_list):
+        return dash.no_update
+    clicked = ctx.triggered_id["index"]
     return None if clicked == current else clicked
 
 
