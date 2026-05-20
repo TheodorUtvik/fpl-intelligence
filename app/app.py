@@ -3,6 +3,9 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, clientside_callback, dcc, html
 
 from app.components.sidebar import BREADCRUMBS, build_sidebar
+from app.db import init_db
+
+init_db()
 
 app = dash.Dash(
     __name__,
@@ -48,6 +51,7 @@ app.clientside_callback(
             '/top50':      'nav-top50',
             '/optimizer':  'nav-optimizer',
             '/transfers':  'nav-transfers',
+            '/my-team':    'nav-my-team',
             '/results':    'nav-results',
         };
         const base   = 'nav-item';
@@ -61,7 +65,7 @@ app.clientside_callback(
                 bestLen = path.length;
             }
         }
-        const ids = ['nav-home', 'nav-top50', 'nav-optimizer', 'nav-transfers', 'nav-results'];
+        const ids = ['nav-home', 'nav-top50', 'nav-optimizer', 'nav-transfers', 'nav-my-team', 'nav-results'];
         return ids.map(id => id === best ? active : base);
     }
     """,
@@ -70,6 +74,7 @@ app.clientside_callback(
         Output("nav-top50",     "className"),
         Output("nav-optimizer", "className"),
         Output("nav-transfers", "className"),
+        Output("nav-my-team",   "className"),
         Output("nav-results",   "className"),
     ],
     Input("url", "pathname"),
@@ -83,7 +88,7 @@ def update_topbar(pathname):
     latest_gw  = get_latest_gw()
     predict_gw = latest_gw + 1
 
-    section, page = BREADCRUMBS.get(pathname or "/", ("", (pathname or "").lstrip("/")))
+    section, page = BREADCRUMBS.get(pathname or "/", ("Actions", (pathname or "").lstrip("/")))
 
     crumb_parts = [html.Span("FPL Intelligence")]
     if section:
