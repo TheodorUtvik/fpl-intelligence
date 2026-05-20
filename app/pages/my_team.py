@@ -141,7 +141,8 @@ def _build_panel(
     bank: float,
     free_transfers: int,
 ) -> html.Div:
-    hit = free_transfers < 1
+    hit      = free_transfers < 1
+    pts_head = "Δpts (net)" if hit else "Δpts"
 
     rows = []
     for s in suggestions:
@@ -203,7 +204,7 @@ def _build_panel(
                             html.Span("Cost",    className="sugg-h-num mono"),
                             html.Span("Pts",     className="sugg-h-num mono"),
                             html.Span("Δ£",      className="sugg-h-num mono"),
-                            html.Span("Δpts",    className="sugg-h-num mono"),
+                            html.Span(pts_head,  className="sugg-h-num mono"),
                             html.Span("",        className="sugg-h-btn"),
                         ],
                         className="sugg-header",
@@ -444,6 +445,7 @@ def render_panel(selected_id, _):
         squad_player_ids=squad_ids,
         bank=team["bank"],
         players_df=avail,
+        free_transfers=team["free_transfers"],
     )
     return _build_panel(sel_list[0], suggestions, team["bank"], team["free_transfers"])
 

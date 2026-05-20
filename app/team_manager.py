@@ -111,10 +111,12 @@ def get_replacement_suggestions(
     squad_player_ids: list[int],
     bank: float,
     players_df: pd.DataFrame,
+    free_transfers: int = 1,
 ) -> list[dict]:
     """
     Return ranked replacements for one squad slot.
     Filters: same position, budget, 3-per-team cap, available status.
+    When free_transfers < 1 the -4pt hit is factored into pts_delta and sort order.
     """
     current_row = players_df[players_df["player_id"] == player_id]
     if current_row.empty:
@@ -141,15 +143,19 @@ def get_replacement_suggestions(
         candidates["team"].map(lambda t: team_counts.get(t, 0)) < _MAX_PER_TEAM
     ].copy()
 
+    hit = free_transfers < 1
     candidates["cost_delta"] = candidates["now_cost"] - current_cost
-    candidates["pts_delta"]  = candidates["predicted_pts"] - float(current["predicted_pts"])
+    candidates["pts_delta"]  = (
+        candidates["predicted_pts"] - float(current["predicted_pts"]) - (4.0 if hit else 0.0)
+    )
 
+    sort_col = "pts_delta"   # net gain already baked in; best rank = highest net
     keep = [
         "player_id", "web_name", "team_name", "now_cost",
         "predicted_pts", "cost_delta", "pts_delta", "status", "fdr_next",
     ]
     return (
-        candidates.sort_values("predicted_pts", ascending=False)
+        candidates.sort_values(sort_col, ascending=False)
         .head(15)[keep]
         .to_dict(orient="records")
     )
