@@ -517,26 +517,21 @@ def import_team(_, team_id, free_transfers, refresh_count):
         return dash.no_update, dbc.Alert(f"Could not fetch team: {e}", color="danger")
 
     all_p = get_players_with_predictions()
+    price_map = all_p.set_index("player_id")["now_cost"].to_dict()
+
     picks = []
     for pick in data["picks"]:
         pos_num   = pick["position"]
         bench_ord = (pos_num - 11) if pos_num > 11 else None
-
-        sp = pick.get("selling_price",  0) / 10
-        pp = pick.get("purchase_price", 0) / 10
-
-        if sp == 0:
-            row = all_p[all_p["player_id"] == pick["element"]]
-            if not row.empty:
-                sp = pp = float(row.iloc[0]["now_cost"])
-
+        # FPL public picks endpoint omits price fields; fall back to current market price
+        price = price_map.get(pick["element"], 0.0)
         picks.append({
-            "player_id":      pick["element"],
-            "purchase_price": pp,
-            "selling_price":  sp,
-            "is_captain":     int(pick["is_captain"]),
+            "player_id":       pick["element"],
+            "purchase_price":  price,
+            "selling_price":   price,
+            "is_captain":      int(pick["is_captain"]),
             "is_vice_captain": int(pick["is_vice_captain"]),
-            "bench_order":    bench_ord,
+            "bench_order":     bench_ord,
         })
 
     save_team(
