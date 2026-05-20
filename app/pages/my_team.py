@@ -86,6 +86,7 @@ def _build_pitch(starters: list[dict]) -> html.Div:
                     "animationDelay": f"{delay}ms", "animationFillMode": "both",
                 },
                 n_clicks=0,
+                **{"data-pid": str(pid)},
             ))
 
     lines = html.Div([
@@ -126,6 +127,7 @@ def _build_bench(bench: list[dict]) -> html.Div:
             id={"type": "mt-token", "index": pid},
             className=token_cls,
             n_clicks=0,
+            **{"data-pid": str(pid)},
         ))
 
     return html.Div(
@@ -310,22 +312,16 @@ layout = html.Div(
 
 # ── Clientside callbacks ──────────────────────────────────────────────────────
 
-# 1. Highlight the selected token (visual only, no server round-trip)
+# 1. Highlight the selected token using data-pid attribute (reliable in Dash 4 DOM)
 dash.clientside_callback(
     """
     function(selected_id) {
-        document.querySelectorAll('.mt-player, .mt-bench-token').forEach(function(el) {
+        document.querySelectorAll('[data-pid]').forEach(function(el) {
             el.classList.remove('mt-selected');
         });
         if (selected_id !== null && selected_id !== undefined) {
-            document.querySelectorAll('.mt-player, .mt-bench-token').forEach(function(el) {
-                try {
-                    var parsed = JSON.parse(el.id);
-                    if (parsed && parsed.index == selected_id) {
-                        el.classList.add('mt-selected');
-                    }
-                } catch(e) {}
-            });
+            var el = document.querySelector('[data-pid="' + selected_id + '"]');
+            if (el) el.classList.add('mt-selected');
         }
         return null;
     }
@@ -335,23 +331,35 @@ dash.clientside_callback(
 )
 
 # 2. Attach a delegated click listener to the pitch area whenever the pitch re-renders.
-#    Stores the clicked player_id in window._mtClickPid for the poll callback to pick up.
+#    Uses data-pid attribute (reliably rendered to DOM) to identify the clicked player.
 dash.clientside_callback(
     """
     function(refresh) {
         window._mtClickPid = undefined;
         setTimeout(function() {
             var container = document.getElementById('mt-pitch-area');
-            if (!container || container._mtClickBound) return;
+            if (!container) {
+                console.warn('[MT] mt-pitch-area not found after timeout');
+                return;
+            }
+            if (container._mtClickBound) return;
             container._mtClickBound = true;
+            console.log('[MT] click listener attached to mt-pitch-area');
             container.addEventListener('click', function(e) {
-                var btn = e.target.closest('.mt-player, .mt-bench-token');
-                if (!btn) return;
-                try {
-                    window._mtClickPid = JSON.parse(btn.id).index;
-                } catch(err) {}
+                var el = e.target;
+                while (el && el !== container) {
+                    if (el.hasAttribute('data-pid')) {
+                        var pid = parseInt(el.getAttribute('data-pid'), 10);
+                        if (!isNaN(pid)) {
+                            console.log('[MT] token clicked, pid=', pid);
+                            window._mtClickPid = pid;
+                        }
+                        return;
+                    }
+                    el = el.parentElement;
+                }
             });
-        }, 250);
+        }, 300);
         return null;
     }
     """,
