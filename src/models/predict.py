@@ -21,8 +21,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import shap
-import xgboost as xgb
+
+# shap and xgboost are imported lazily inside methods — both are heavy
+# at import time (shap triggers numba/CUDA probing; xgb is large).
+# This keeps app startup fast; the cost is paid once on first use.
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,8 @@ class FPLPredictor:
 
     def __init__(self, models_dir: Path = MODELS_DIR):
         self.models_dir = Path(models_dir)
-        self.model: xgb.XGBRegressor | None = None
-        self.explainer: shap.TreeExplainer | None = None
+        self.model = None          # xgb.XGBRegressor — loaded lazily
+        self.explainer = None      # shap.TreeExplainer — loaded lazily
         self.feature_cols: list[str] | None = None
 
     # ------------------------------------------------------------------
@@ -71,6 +73,9 @@ class FPLPredictor:
         -------
         self
         """
+        import xgboost as xgb  # noqa: PLC0415
+        import shap            # noqa: PLC0415
+
         self.feature_cols = self._load_feature_cols()
 
         if params is None:
@@ -121,7 +126,7 @@ class FPLPredictor:
         preds = self.model.predict(X)
         return pd.Series(preds, index=features_df.index, name="predicted_pts")
 
-    def explain(self, features_df: pd.DataFrame) -> shap.Explanation:
+    def explain(self, features_df: pd.DataFrame):
         """
         Return SHAP values for the given rows.
 
@@ -137,6 +142,7 @@ class FPLPredictor:
             SHAP Explanation object. Use shap.plots.waterfall(result[0])
             or shap.plots.beeswarm(result) to visualise.
         """
+        import shap  # noqa: PLC0415
         self._check_loaded()
         X = features_df[self.feature_cols]
         return self.explainer(X)
@@ -171,6 +177,7 @@ class FPLPredictor:
                 f"Model not found at {model_path}. Run notebook 04 first."
             )
 
+        import xgboost as xgb  # noqa: PLC0415
         self.model = xgb.XGBRegressor()
         self.model.load_model(model_path)
 
