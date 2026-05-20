@@ -2,8 +2,12 @@
 app/pages/my_team.py
 
 My Team: football pitch with click-to-replace suggestions.
-Click any player to see ranked replacements (same position, budget-aware,
-3-per-club cap). No change is applied until you explicitly confirm.
+
+Architecture:
+  - render_pitch   fires only on mt-refresh  → stable; no re-render on click
+  - render_panel   fires on mt-selected      → only the side panel updates
+  - clientside CB  fires on mt-selected      → adds/removes mt-selected CSS class
+    (avoids a full server round-trip just to highlight a token)
 """
 from __future__ import annotations
 
@@ -15,7 +19,6 @@ from app.data_loader import get_available_players, get_latest_gw, get_players_wi
 
 dash.register_page(__name__, path="/my-team", name="My Team")
 
-# ── Design constants ──────────────────────────────────────────────────────────
 POS_COLOUR = {"GKP": "#c8a84a", "DEF": "#4a6fb5", "MID": "#3d7a52", "FWD": "#b5553a"}
 POS_TEXT   = {"GKP": "#14130f", "DEF": "#fff",    "MID": "#fff",    "FWD": "#fff"}
 POS_ORDER  = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
@@ -33,7 +36,8 @@ def _row_xs_pct(n: int) -> list[float]:
     return [lo + (hi - lo) * i / (n - 1) for i in range(n)]
 
 
-def _build_pitch(starters: list[dict], selected_id: int | None) -> html.Div:
+def _build_pitch(starters: list[dict]) -> html.Div:
+    """Render 11 starters on pitch. Selected state is applied client-side."""
     row_y = {"FWD": 13, "MID": 38, "DEF": 63, "GKP": 86}
     tokens = []
     idx = 0
@@ -43,37 +47,34 @@ def _build_pitch(starters: list[dict], selected_id: int | None) -> html.Div:
         n = len(group)
         if not n:
             continue
-
         xs    = _row_xs_pct(n)
         y_pct = row_y[pos]
         fill  = POS_COLOUR[pos]
         txt   = POS_TEXT[pos]
 
         for i, p in enumerate(group):
-            pid       = p["player_id"]
-            name      = p["web_name"]
-            pts       = p.get("predicted_pts", 0.0)
-            team_code = str(p.get("team_name", ""))[:3].upper()
-            is_cap    = bool(p.get("is_captain"))
-            is_vice   = bool(p.get("is_vice_captain"))
-            status    = p.get("status", "a")
-            is_sel    = pid == selected_id
-
-            delay = 80 + idx * 90
-            idx  += 1
-            disp  = name if len(name) <= 11 else name[:10] + "."
+            pid    = p["player_id"]
+            name   = p["web_name"]
+            pts    = p.get("predicted_pts", 0.0)
+            tcode  = str(p.get("team_name", ""))[:3].upper()
+            is_cap = bool(p.get("is_captain"))
+            is_vc  = bool(p.get("is_vice_captain"))
+            status = p.get("status", "a")
+            delay  = 80 + idx * 90
+            idx   += 1
+            disp   = name if len(name) <= 11 else name[:10] + "."
 
             jersey_cls = "player-jersey"
-            if is_cap:    jersey_cls += " captain"
-            elif is_vice: jersey_cls += " vice"
+            if is_cap:  jersey_cls += " captain"
+            elif is_vc: jersey_cls += " vice"
 
             token_cls = "pitch-player enter mt-player"
-            if is_sel:                  token_cls += " mt-selected"
-            if status in ("i", "d", "s"): token_cls += " mt-status-warn"
+            if status in ("i", "d", "s"):
+                token_cls += " mt-status-warn"
 
             tokens.append(html.Div(
                 [
-                    html.Div(team_code, className=jersey_cls,
+                    html.Div(tcode, className=jersey_cls,
                              style={"background": fill, "color": txt}),
                     html.Div(disp, className="player-name"),
                     html.Div(f"{pts:.1f}", className="player-pts"),
@@ -81,12 +82,11 @@ def _build_pitch(starters: list[dict], selected_id: int | None) -> html.Div:
                 id={"type": "mt-token", "index": pid},
                 className=token_cls,
                 style={
-                    "left":              f"{xs[i]}%",
-                    "top":               f"{y_pct}%",
-                    "animationDelay":    f"{delay}ms",
-                    "animationFillMode": "both",
+                    "left": f"{xs[i]}%", "top": f"{y_pct}%",
+                    "animationDelay": f"{delay}ms", "animationFillMode": "both",
                 },
                 n_clicks=0,
+                **{"data-pid": str(pid)},
             ))
 
     lines = html.Div([
@@ -99,27 +99,26 @@ def _build_pitch(starters: list[dict], selected_id: int | None) -> html.Div:
     return html.Div([lines, *tokens], className="pitch-wrap")
 
 
-def _build_bench(bench: list[dict], selected_id: int | None) -> html.Div:
+def _build_bench(bench: list[dict]) -> html.Div:
     tokens = []
     for p in bench:
-        pid       = p["player_id"]
-        name      = p["web_name"]
-        pts       = p.get("predicted_pts", 0.0)
-        pos       = p["position"]
-        team_code = str(p.get("team_name", ""))[:3].upper()
-        is_sel    = pid == selected_id
-        status    = p.get("status", "a")
-        fill      = POS_COLOUR[pos]
-        txt       = POS_TEXT[pos]
-        disp      = name if len(name) <= 11 else name[:10] + "."
+        pid    = p["player_id"]
+        name   = p["web_name"]
+        pts    = p.get("predicted_pts", 0.0)
+        pos    = p["position"]
+        tcode  = str(p.get("team_name", ""))[:3].upper()
+        status = p.get("status", "a")
+        fill   = POS_COLOUR[pos]
+        txt    = POS_TEXT[pos]
+        disp   = name if len(name) <= 11 else name[:10] + "."
 
         token_cls = "mt-bench-token"
-        if is_sel:                  token_cls += " mt-selected"
-        if status in ("i", "d", "s"): token_cls += " mt-status-warn"
+        if status in ("i", "d", "s"):
+            token_cls += " mt-status-warn"
 
         tokens.append(html.Div(
             [
-                html.Div(team_code, className="player-jersey",
+                html.Div(tcode, className="player-jersey",
                          style={"background": fill, "color": txt}),
                 html.Div(disp, className="player-name"),
                 html.Div(f"{pts:.1f}", className="player-pts"),
@@ -127,13 +126,11 @@ def _build_bench(bench: list[dict], selected_id: int | None) -> html.Div:
             id={"type": "mt-token", "index": pid},
             className=token_cls,
             n_clicks=0,
+            **{"data-pid": str(pid)},
         ))
 
     return html.Div(
-        [
-            html.Div("Bench", className="bench-label"),
-            html.Div(tokens, className="bench-strip"),
-        ],
+        [html.Div("Bench", className="bench-label"), html.Div(tokens, className="bench-strip")],
         className="bench-wrap",
     )
 
@@ -161,8 +158,8 @@ def _build_panel(
                     html.Div(s["web_name"],          className="sugg-name"),
                     html.Div(s.get("team_name", ""), className="sugg-team"),
                 ], className="sugg-info"),
-                html.Div(f"£{s['now_cost']:.1f}m",     className="sugg-cost mono"),
-                html.Div(f"{s['predicted_pts']:.1f}",   className="sugg-pts mono"),
+                html.Div(f"£{s['now_cost']:.1f}m",   className="sugg-cost mono"),
+                html.Div(f"{s['predicted_pts']:.1f}", className="sugg-pts mono"),
                 html.Div(dc_s, className=f"sugg-delta mono {dc_cl}"),
                 html.Div(dp_s, className=f"sugg-delta mono {dp_cl}"),
                 html.Button(
@@ -175,10 +172,8 @@ def _build_panel(
             className="sugg-row",
         ))
 
-    body_children = rows or [
-        html.Div("No eligible replacements found.",
-                 style={"padding": "16px", "color": INK_3})
-    ]
+    body = rows or [html.Div("No eligible replacements.",
+                              style={"padding": "16px", "color": INK_3})]
 
     return html.Div(
         [
@@ -189,15 +184,12 @@ def _build_panel(
                             html.Span("Replacing ", className="panel-label"),
                             html.Span(selected["web_name"], className="panel-player"),
                         ]),
-                        html.Div(
-                            [
-                                html.Span(f"£{selected['now_cost']:.1f}m", className="mono"),
-                                html.Span(" · "),
-                                html.Span(f"£{bank:.1f}m in bank",
-                                          className="mono", style={"color": ACCENT}),
-                            ],
-                            className="panel-meta",
-                        ),
+                        html.Div([
+                            html.Span(f"£{selected['now_cost']:.1f}m", className="mono"),
+                            html.Span(" · "),
+                            html.Span(f"£{bank:.1f}m in bank",
+                                      className="mono", style={"color": ACCENT}),
+                        ], className="panel-meta"),
                     ]),
                     html.Button("✕", id="mt-close-panel", className="panel-close", n_clicks=0),
                 ],
@@ -216,7 +208,7 @@ def _build_panel(
                         ],
                         className="sugg-header",
                     ),
-                    *body_children,
+                    *body,
                 ],
                 className="panel-body",
             ),
@@ -231,17 +223,12 @@ def _import_form() -> html.Div:
             html.Div("Import your squad", className="setup-title"),
             html.P(
                 [
-                    "Enter your FPL team ID to auto-load your 15-man squad. "
-                    "Find it in the URL when viewing your team on the FPL website: ",
+                    "Find your team ID in the FPL website URL: ",
                     html.Br(),
-                    html.Span(
-                        "fantasy.premierleague.com/entry/",
-                        className="mono",
-                        style={"color": ACCENT},
-                    ),
-                    html.Span("XXXXXXX", className="mono",
-                              style={"color": ACCENT, "fontWeight": 700}),
-                    html.Span("/event/XX", className="mono", style={"color": ACCENT}),
+                    html.Code("fantasy.premierleague.com/entry/",
+                              style={"color": ACCENT}),
+                    html.Code("XXXXXXX", style={"color": ACCENT, "fontWeight": 700}),
+                    html.Code("/event/XX", style={"color": ACCENT}),
                 ],
                 className="setup-desc",
             ),
@@ -252,7 +239,7 @@ def _import_form() -> html.Div:
                         dbc.Input(
                             id="mt-team-id-input",
                             type="number",
-                            min=1,
+                            min=1000,
                             placeholder="e.g. 11405847",
                             className="form-control",
                         ),
@@ -262,20 +249,13 @@ def _import_form() -> html.Div:
                         dbc.Input(
                             id="mt-ft-select",
                             type="number",
-                            min=0,
-                            max=10,
-                            step=1,
-                            value=1,
+                            min=0, max=10, step=1, value=1,
                             className="form-control",
                             style={"width": "80px"},
                         ),
                     ], className="control-group"),
-                    html.Button(
-                        "Import team",
-                        id="mt-import-btn",
-                        className="btn-primary-custom",
-                        n_clicks=0,
-                    ),
+                    html.Button("Import team", id="mt-import-btn",
+                                className="btn-primary-custom", n_clicks=0),
                     html.Div(id="mt-import-err"),
                 ],
                 className="setup-controls",
@@ -292,6 +272,7 @@ layout = html.Div(
         dcc.Store(id="mt-selected",     data=None),
         dcc.Store(id="mt-refresh",      data=0),
         dcc.Store(id="mt-pending-xfer", data=None),
+        dcc.Store(id="mt-sel-dummy"),        # clientside callback output
         dcc.ConfirmDialog(id="mt-confirm", message=""),
 
         html.Div(
@@ -300,9 +281,8 @@ layout = html.Div(
                     html.Div("Actions · My Team", className="page-eyebrow"),
                     html.H1("My Team", className="page-title serif"),
                     html.P(
-                        "Click any player on the pitch to see ranked replacements. "
-                        "Suggestions follow FPL rules — budget, position, 3-per-club. "
-                        "No change is applied until you confirm.",
+                        "Click any player to see ranked replacements — budget, position, "
+                        "and 3-per-club rules applied. Nothing changes until you confirm.",
                         className="page-desc",
                     ),
                 ]),
@@ -310,29 +290,52 @@ layout = html.Div(
             className="page-head",
         ),
 
-        html.Div(id="mt-body"),
+        # KPI bar + re-import button
+        html.Div(id="mt-kpi-bar"),
+
+        # Two-column: pitch (fixed width) + panel (flexible)
+        html.Div(
+            [
+                html.Div(id="mt-pitch-area", style={"flex": "0 0 400px", "minWidth": 0}),
+                html.Div(id="mt-panel-area", style={"flex": "1 1 0",    "minWidth": 0}),
+            ],
+            style={"display": "flex", "gap": "16px", "alignItems": "flex-start"},
+        ),
     ],
     className="page",
 )
 
 
-# ── Callbacks ─────────────────────────────────────────────────────────────────
+# ── Clientside: highlight selected token (no server round-trip) ───────────────
 
-@callback(
-    Output("mt-body", "children"),
-    Input("mt-refresh",  "data"),
+dash.clientside_callback(
+    """
+    function(selected_id) {
+        document.querySelectorAll('[data-pid]').forEach(function(el) {
+            el.classList.remove('mt-selected');
+        });
+        if (selected_id !== null && selected_id !== undefined) {
+            var el = document.querySelector('[data-pid="' + selected_id + '"]');
+            if (el) el.classList.add('mt-selected');
+        }
+        return null;
+    }
+    """,
+    Output("mt-sel-dummy", "data"),
     Input("mt-selected", "data"),
 )
-def render_body(_, selected_id):
-    from app.team_manager import load_team, get_replacement_suggestions
 
+
+# ── Server callbacks ──────────────────────────────────────────────────────────
+
+def _load_enriched():
+    """Load team from DB and enrich with prediction data. Returns (team, enriched) or (None, [])."""
+    from app.team_manager import load_team
     team = load_team()
     if team is None:
-        return _import_form()
+        return None, []
 
     all_players = get_players_with_predictions()
-    avail       = get_available_players()
-
     enriched = []
     for p in team["players"]:
         pid = p["player_id"]
@@ -346,9 +349,22 @@ def render_body(_, selected_id):
         d["selling_price"]   = p["selling_price"]
         enriched.append(d)
 
+    return team, enriched
+
+
+@callback(
+    Output("mt-kpi-bar",    "children"),
+    Output("mt-pitch-area", "children"),
+    Input("mt-refresh", "data"),
+)
+def render_pitch(refresh_count):
+    team, enriched = _load_enriched()
+    if team is None:
+        return None, _import_form()
+
     starters = sorted(
         [p for p in enriched if p["bench_order"] is None],
-        key=lambda p: (POS_ORDER[p["position"]], -p.get("predicted_pts", 0)),
+        key=lambda p: (POS_ORDER.get(p["position"], 9), -p.get("predicted_pts", 0)),
     )
     bench = sorted(
         [p for p in enriched if p["bench_order"] is not None],
@@ -357,8 +373,6 @@ def render_body(_, selected_id):
 
     bank           = team["bank"]
     free_transfers = team["free_transfers"]
-    squad_ids      = [p["player_id"] for p in enriched]
-
     pred_xi = sum(
         p.get("predicted_pts", 0) * (2 if p["is_captain"] else 1)
         for p in starters
@@ -366,7 +380,7 @@ def render_body(_, selected_id):
 
     ft_cls = "mt-ft-good" if free_transfers > 0 else "mt-ft-none"
 
-    kpi_strip = html.Div(
+    kpi_bar = html.Div(
         [
             html.Div(
                 [
@@ -393,46 +407,45 @@ def render_body(_, selected_id):
                 style={"flex": "1", "marginBottom": 0},
             ),
             html.Div(
-                html.Button(
-                    "↺  Re-import",
-                    id="mt-reimport-btn",
-                    className="btn-secondary-custom",
-                    n_clicks=0,
-                ),
+                html.Button("↺  Re-import", id="mt-reimport-btn",
+                            className="btn-secondary-custom", n_clicks=0),
                 style={"display": "flex", "alignItems": "center", "paddingLeft": "12px"},
             ),
         ],
-        style={"display": "flex", "alignItems": "stretch", "marginBottom": "20px"},
+        style={"display": "flex", "alignItems": "stretch", "marginBottom": "16px"},
     )
 
-    pitch_col = html.Div(
-        [_build_pitch(starters, selected_id), _build_bench(bench, selected_id)],
-        style={"flex": "1 1 0", "minWidth": 0},
-    )
+    pitch_area = html.Div([_build_pitch(starters), _build_bench(bench)])
+    return kpi_bar, pitch_area
 
-    if selected_id is not None:
-        sel_list = [p for p in enriched if p["player_id"] == selected_id]
-        if sel_list:
-            suggestions = get_replacement_suggestions(
-                player_id=selected_id,
-                squad_player_ids=squad_ids,
-                bank=bank,
-                players_df=avail,
-            )
-            panel_div = html.Div(
-                _build_panel(sel_list[0], suggestions, bank, free_transfers),
-                style={"flex": "0 0 360px"},
-            )
-        else:
-            panel_div = html.Div(style={"display": "none"})
-    else:
-        panel_div = html.Div(style={"display": "none"})
 
-    main = html.Div(
-        [pitch_col, panel_div],
-        style={"display": "flex", "gap": "18px", "alignItems": "flex-start"},
+@callback(
+    Output("mt-panel-area", "children"),
+    Input("mt-selected", "data"),
+    State("mt-refresh",  "data"),
+)
+def render_panel(selected_id, _):
+    if selected_id is None:
+        return html.Div()
+
+    from app.team_manager import get_replacement_suggestions
+    team, enriched = _load_enriched()
+    if team is None:
+        return html.Div()
+
+    sel_list = [p for p in enriched if p["player_id"] == selected_id]
+    if not sel_list:
+        return html.Div()
+
+    squad_ids   = [p["player_id"] for p in enriched]
+    avail       = get_available_players()
+    suggestions = get_replacement_suggestions(
+        player_id=selected_id,
+        squad_player_ids=squad_ids,
+        bank=team["bank"],
+        players_df=avail,
     )
-    return html.Div([kpi_strip, main])
+    return _build_panel(sel_list[0], suggestions, team["bank"], team["free_transfers"])
 
 
 @callback(
@@ -477,18 +490,18 @@ def stage_transfer(n_clicks_list, selected_id):
     if not tid or selected_id is None:
         return dash.no_update, False, ""
 
-    in_pid     = tid["index"]
-    all_p      = get_players_with_predictions()
-    out_row    = all_p[all_p["player_id"] == selected_id]
-    in_row     = all_p[all_p["player_id"] == in_pid]
+    in_pid  = tid["index"]
+    all_p   = get_players_with_predictions()
+    out_row = all_p[all_p["player_id"] == selected_id]
+    in_row  = all_p[all_p["player_id"] == in_pid]
     if out_row.empty or in_row.empty:
         return dash.no_update, False, ""
 
-    out_name = out_row.iloc[0]["web_name"]
-    in_name  = in_row.iloc[0]["web_name"]
-    in_cost  = float(in_row.iloc[0]["now_cost"])
-    msg = f"Transfer {out_name} → {in_name} (£{in_cost:.1f}m). Confirm?"
-
+    in_cost = float(in_row.iloc[0]["now_cost"])
+    msg = (
+        f"Transfer {out_row.iloc[0]['web_name']} → {in_row.iloc[0]['web_name']} "
+        f"(£{in_cost:.1f}m). Confirm?"
+    )
     return {"out": selected_id, "in": in_pid, "cost": in_cost}, True, msg
 
 
@@ -513,7 +526,7 @@ def confirm_transfer(submit_n, pending, refresh_count):
 
 
 @callback(
-    Output("mt-refresh",   "data",  allow_duplicate=True),
+    Output("mt-refresh",    "data",  allow_duplicate=True),
     Output("mt-import-err", "children"),
     Input("mt-import-btn",    "n_clicks"),
     State("mt-team-id-input", "value"),
@@ -528,8 +541,8 @@ def import_team(_, team_id, free_transfers, refresh_count):
     team_id = int(team_id)
     if team_id < 1000:
         return dash.no_update, dbc.Alert(
-            "That doesn't look like a valid FPL team ID (should be a large number, "
-            "e.g. 11405847). Find yours in the URL on the FPL website.",
+            "That ID looks too small — FPL team IDs are typically 7+ digits. "
+            "Find yours in the URL: fantasy.premierleague.com/entry/XXXXXXX/event/XX",
             color="warning",
         )
 
@@ -542,20 +555,18 @@ def import_team(_, team_id, free_transfers, refresh_count):
 
     if len(data["picks"]) != 15:
         return dash.no_update, dbc.Alert(
-            f"Unexpected response from FPL (got {len(data['picks'])} players instead of 15). "
-            "Double-check your team ID.",
+            f"Expected 15 players, got {len(data['picks'])}. Check your team ID.",
             color="danger",
         )
 
-    all_p = get_players_with_predictions()
+    all_p     = get_players_with_predictions()
     price_map = all_p.set_index("player_id")["now_cost"].to_dict()
 
     picks = []
     for pick in data["picks"]:
         pos_num   = pick["position"]
         bench_ord = (pos_num - 11) if pos_num > 11 else None
-        # FPL public picks endpoint omits price fields; fall back to current market price
-        price = price_map.get(pick["element"], 0.0)
+        price     = price_map.get(pick["element"], 0.0)
         picks.append({
             "player_id":       pick["element"],
             "purchase_price":  price,
@@ -565,12 +576,8 @@ def import_team(_, team_id, free_transfers, refresh_count):
             "bench_order":     bench_ord,
         })
 
-    save_team(
-        picks=picks,
-        bank=data["bank"],
-        free_transfers=int(free_transfers),
-        fpl_team_id=int(team_id),
-    )
+    ft = int(free_transfers) if free_transfers is not None else 1
+    save_team(picks=picks, bank=data["bank"], free_transfers=ft, fpl_team_id=team_id)
     return (refresh_count or 0) + 1, None
 
 
