@@ -272,7 +272,9 @@ layout = html.Div(
         dcc.Store(id="mt-selected",     data=None),
         dcc.Store(id="mt-refresh",      data=0),
         dcc.Store(id="mt-pending-xfer", data=None),
-        dcc.Store(id="mt-sel-dummy"),        # clientside callback output
+        dcc.Store(id="mt-sel-dummy"),    # highlight clientside callback output
+        dcc.Store(id="mt-click-dummy"),  # click-setup clientside callback output
+        dcc.Interval(id="mt-click-poll", interval=150, n_intervals=0),
         dcc.ConfirmDialog(id="mt-confirm", message=""),
 
         html.Div(
@@ -306,8 +308,9 @@ layout = html.Div(
 )
 
 
-# ── Clientside: highlight selected token (no server round-trip) ───────────────
+# ── Clientside callbacks ──────────────────────────────────────────────────────
 
+# 1. Highlight the selected token (visual only, no server round-trip)
 dash.clientside_callback(
     """
     function(selected_id) {
@@ -329,6 +332,51 @@ dash.clientside_callback(
     """,
     Output("mt-sel-dummy", "data"),
     Input("mt-selected", "data"),
+)
+
+# 2. Attach a delegated click listener to the pitch area whenever the pitch re-renders.
+#    Stores the clicked player_id in window._mtClickPid for the poll callback to pick up.
+dash.clientside_callback(
+    """
+    function(refresh) {
+        window._mtClickPid = undefined;
+        setTimeout(function() {
+            var container = document.getElementById('mt-pitch-area');
+            if (!container || container._mtClickBound) return;
+            container._mtClickBound = true;
+            container.addEventListener('click', function(e) {
+                var btn = e.target.closest('.mt-player, .mt-bench-token');
+                if (!btn) return;
+                try {
+                    window._mtClickPid = JSON.parse(btn.id).index;
+                } catch(err) {}
+            });
+        }, 250);
+        return null;
+    }
+    """,
+    Output("mt-click-dummy", "data"),
+    Input("mt-refresh", "data"),
+)
+
+# 3. Poll every 150 ms; when a click has been queued, write it to mt-selected.
+#    Runs entirely in the browser — no server request unless a player was clicked.
+dash.clientside_callback(
+    """
+    function(n, current_selected) {
+        if (window._mtClickPid === undefined || window._mtClickPid === null) {
+            return window.dash_clientside.no_update;
+        }
+        var pid = window._mtClickPid;
+        window._mtClickPid = undefined;
+        if (pid === current_selected) return null;   // second click deselects
+        return pid;
+    }
+    """,
+    Output("mt-selected", "data", allow_duplicate=True),
+    Input("mt-click-poll", "n_intervals"),
+    State("mt-selected", "data"),
+    prevent_initial_call=True,
 )
 
 
@@ -463,18 +511,6 @@ def render_panel(selected_id, _):
             style={"padding": "16px", "color": "var(--bad)"},
         )
 
-
-@callback(
-    Output("mt-selected", "data"),
-    Input({"type": "mt-token", "index": ALL}, "n_clicks"),
-    State("mt-selected", "data"),
-)
-def on_player_click(n_clicks_list, current):
-    from dash import ctx
-    if not ctx.triggered_id or not n_clicks_list or not any(n_clicks_list):
-        return dash.no_update
-    clicked = ctx.triggered_id["index"]
-    return None if clicked == current else clicked
 
 
 @callback(
