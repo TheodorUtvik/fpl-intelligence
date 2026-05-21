@@ -295,8 +295,9 @@ layout = html.Div(
         dcc.Store(id="mt-pending-xfer",      data=None),
         dcc.Store(id="mt-undo-stack",        data=[]),
         dcc.Store(id="mt-pts-delta",         data=0.0),
-        dcc.Store(id="mt-xfer-open",         data=False),
-        dcc.Store(id="mt-xfer-close-relay",  data=None),
+        dcc.Store(id="mt-xfer-open",        data=False),
+        dcc.Store(id="mt-xfer-btn-relay",   data=None),
+        dcc.Store(id="mt-xfer-close-relay", data=None),
         dcc.Store(id="mt-sel-dummy"),
         dcc.Store(id="mt-click-dummy"),
         dcc.Interval(id="mt-click-poll", interval=150, n_intervals=0),
@@ -411,7 +412,20 @@ dash.clientside_callback(
     prevent_initial_call=True,
 )
 
-# 5. Route xfer-rec close button through its own relay store.
+# 5. Relay mt-xfer-btn (dynamic) → static store so toggle_xfer_panel has no dynamic Inputs.
+dash.clientside_callback(
+    """
+    function(n) {
+        if (!n) return window.dash_clientside.no_update;
+        return n;
+    }
+    """,
+    Output("mt-xfer-btn-relay", "data"),
+    Input("mt-xfer-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+# 6. Route xfer-rec close button through its own relay store.
 dash.clientside_callback(
     """
     function(n) {
@@ -1060,16 +1074,16 @@ def _build_xfer_rec_card(transfers: list) -> html.Div:
 
 @callback(
     Output("mt-xfer-open", "data"),
-    Input("mt-xfer-btn",          "n_clicks"),
-    Input("mt-xfer-close-relay",  "data"),
-    State("mt-xfer-open",         "data"),
+    Input("mt-xfer-btn-relay",   "data"),
+    Input("mt-xfer-close-relay", "data"),
+    State("mt-xfer-open",        "data"),
     prevent_initial_call=True,
 )
-def toggle_xfer_panel(btn_clicks, close_relay, is_open):
+def toggle_xfer_panel(btn_relay, close_relay, is_open):
     from dash import ctx
     trig = ctx.triggered_id
-    if trig == "mt-xfer-btn":
-        if not btn_clicks:
+    if trig == "mt-xfer-btn-relay":
+        if not btn_relay:
             return dash.no_update
         return not (is_open or False)
     if trig == "mt-xfer-close-relay":
