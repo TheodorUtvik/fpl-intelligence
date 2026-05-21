@@ -87,6 +87,15 @@ def get_conn():
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(_SCHEMA)
+        for ddl in [
+            "ALTER TABLE team_meta ADD COLUMN original_squad_json TEXT",
+            "ALTER TABLE team_meta ADD COLUMN original_bank REAL",
+            "ALTER TABLE team_meta ADD COLUMN original_ft INTEGER",
+        ]:
+            try:
+                conn.execute(ddl)
+            except Exception:
+                pass
 
         user_exists = conn.execute(
             "SELECT 1 FROM users WHERE user_id = ?", (DEFAULT_USER_ID,)

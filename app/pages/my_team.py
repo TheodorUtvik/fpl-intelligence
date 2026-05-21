@@ -141,18 +141,31 @@ def _build_panel(
     suggestions: list[dict],
     bank: float,
     free_transfers: int,
+    swap_section=None,
+    reversal_pid: int | None = None,
 ) -> html.Div:
     hit      = free_transfers < 1
     pts_head = "Δpts (net)" if hit else "Δpts"
 
     rows = []
     for s in suggestions:
+        is_reversal = s["player_id"] == reversal_pid
         dc   = s["cost_delta"]
         dp   = s["pts_delta"]
         dc_s = f"{'−' if dc < 0 else '+'}£{abs(dc):.1f}m"
         dp_s = f"{dp:+.1f}"
         dc_cl = "mt-delta-good" if dc <= 0 else "mt-delta-bad"
         dp_cl = "mt-delta-good" if dp > 0  else "mt-delta-bad"
+
+        if is_reversal:
+            btn_label = "↩ Undo"
+            btn_cls   = "btn-apply btn-apply-undo"
+        elif hit:
+            btn_label = "Apply (−4)"
+            btn_cls   = "btn-apply btn-apply-hit"
+        else:
+            btn_label = "Apply"
+            btn_cls   = "btn-apply"
 
         rows.append(html.Div(
             [
@@ -165,9 +178,9 @@ def _build_panel(
                 html.Div(dc_s, className=f"sugg-delta mono {dc_cl}"),
                 html.Div(dp_s, className=f"sugg-delta mono {dp_cl}"),
                 html.Button(
-                    "Apply" if not hit else "Apply (−4)",
+                    btn_label,
                     id={"type": "mt-apply-btn", "index": s["player_id"]},
-                    className="btn-apply" + (" btn-apply-hit" if hit else ""),
+                    className=btn_cls,
                     n_clicks=0,
                 ),
             ],
@@ -177,6 +190,8 @@ def _build_panel(
     body = rows or [html.Div("No eligible replacements.",
                               style={"padding": "16px", "color": INK_3})]
 
+    pos = selected.get("position", "")
+
     return html.Div(
         [
             html.Div(
@@ -185,6 +200,7 @@ def _build_panel(
                         html.Div([
                             html.Span("Replacing ", className="panel-label"),
                             html.Span(selected["web_name"], className="panel-player"),
+                            html.Span(f" · {pos}", className="panel-pos"),
                         ]),
                         html.Div([
                             html.Span(f"£{selected['now_cost']:.1f}m", className="mono"),
@@ -199,11 +215,12 @@ def _build_panel(
             ),
             html.Div(
                 [
+                    swap_section,
                     html.Div(
                         [
                             html.Span("Player",  className="sugg-h-name"),
                             html.Span("Cost",    className="sugg-h-num mono"),
-                            html.Span("Pts",     className="sugg-h-num mono"),
+                            html.Span("xPts",    className="sugg-h-num mono"),
                             html.Span("Δ£",      className="sugg-h-num mono"),
                             html.Span(pts_head,  className="sugg-h-num mono"),
                             html.Span("",        className="sugg-h-btn"),
@@ -273,10 +290,13 @@ layout = html.Div(
     [
         dcc.Store(id="mt-selected",     data=None),
         dcc.Store(id="mt-click-relay",  data=None),  # poll → server bridge
+        dcc.Store(id="mt-close-relay",  data=None),  # close btn → server bridge
         dcc.Store(id="mt-refresh",      data=0),
         dcc.Store(id="mt-pending-xfer", data=None),
-        dcc.Store(id="mt-sel-dummy"),    # highlight clientside callback output
-        dcc.Store(id="mt-click-dummy"),  # click-setup clientside callback output
+        dcc.Store(id="mt-undo-stack",   data=[]),
+        dcc.Store(id="mt-pts-delta",    data=0.0),
+        dcc.Store(id="mt-sel-dummy"),
+        dcc.Store(id="mt-click-dummy"),
         dcc.Interval(id="mt-click-poll", interval=150, n_intervals=0),
         dcc.ConfirmDialog(id="mt-confirm", message=""),
 
@@ -332,28 +352,32 @@ dash.clientside_callback(
 )
 
 # 2. Attach a delegated click listener to the pitch area whenever the pitch re-renders.
-#    Uses data-pid attribute (reliably rendered to DOM) to identify the clicked player.
+#    Same-player click flashes the panel instead of deselecting.
 dash.clientside_callback(
     """
     function(refresh) {
         window._mtClickPid = undefined;
         setTimeout(function() {
             var container = document.getElementById('mt-pitch-area');
-            if (!container) {
-                console.warn('[MT] mt-pitch-area not found after timeout');
-                return;
-            }
+            if (!container) return;
             if (container._mtClickBound) return;
             container._mtClickBound = true;
-            console.log('[MT] click listener attached to mt-pitch-area');
             container.addEventListener('click', function(e) {
                 var el = e.target;
                 while (el && el !== container) {
                     if (el.hasAttribute('data-pid')) {
                         var pid = parseInt(el.getAttribute('data-pid'), 10);
                         if (!isNaN(pid)) {
-                            console.log('[MT] token clicked, pid=', pid);
-                            window._mtClickPid = pid;
+                            if (el.classList.contains('mt-selected')) {
+                                var panel = document.querySelector('.replacement-panel');
+                                if (panel) {
+                                    panel.classList.remove('mt-panel-flash');
+                                    void panel.offsetWidth;
+                                    panel.classList.add('mt-panel-flash');
+                                }
+                            } else {
+                                window._mtClickPid = pid;
+                            }
                         }
                         return;
                     }
@@ -366,6 +390,20 @@ dash.clientside_callback(
     """,
     Output("mt-click-dummy", "data"),
     Input("mt-refresh", "data"),
+)
+
+# 4. Route close-button clicks through a relay store (primary output, no allow_duplicate)
+#    so the single update_selected server callback can own mt-selected exclusively.
+dash.clientside_callback(
+    """
+    function(n) {
+        if (!n) return window.dash_clientside.no_update;
+        return n;
+    }
+    """,
+    Output("mt-close-relay", "data"),
+    Input("mt-close-panel", "n_clicks"),
+    prevent_initial_call=True,
 )
 
 # 3. Poll every 150 ms; when a click has been queued, push it to the relay store.
@@ -391,16 +429,23 @@ dash.clientside_callback(
 # ── Server callbacks ──────────────────────────────────────────────────────────
 
 @callback(
-    Output("mt-selected", "data"),          # PRIMARY writer — no allow_duplicate
-    Input("mt-click-relay", "data"),
-    State("mt-selected", "data"),
+    Output("mt-selected", "data"),   # sole writer — no allow_duplicate needed anywhere
+    Input("mt-click-relay",  "data"),
+    Input("mt-close-relay",  "data"),
     prevent_initial_call=True,
 )
-def on_click_relay(clicked_pid, current):
-    """Translate a relay click into a selected-player toggle."""
-    if clicked_pid is None:
-        return dash.no_update
-    return None if clicked_pid == current else clicked_pid
+def update_selected(clicked_pid, close_signal):
+    from dash import ctx
+    trig = ctx.triggered_id
+    if trig == "mt-click-relay":
+        if clicked_pid is None:
+            return dash.no_update
+        return clicked_pid          # no toggle; X button or new player closes
+    if trig == "mt-close-relay":
+        if not close_signal:
+            return dash.no_update
+        return None
+    return dash.no_update
 
 
 def _load_enriched():
@@ -422,24 +467,107 @@ def _load_enriched():
         d["is_vice_captain"] = bool(p["is_vice_captain"])
         d["bench_order"]     = p["bench_order"]
         d["selling_price"]   = p["selling_price"]
+        d["row_id"]          = p["id"]   # stable DB row id — used for positional sort
         enriched.append(d)
 
     return team, enriched
+
+
+def _valid_bench_to_xi(enriched: list[dict], bench_p: dict) -> list[dict]:
+    """XI players that bench_p can swap into without breaking the formation."""
+    from collections import Counter
+    starters   = [p for p in enriched if p["bench_order"] is None]
+    bench_pos  = bench_p["position"]
+    valid = []
+    for xi in starters:
+        new_pos = Counter(p["position"] for p in starters if p["player_id"] != xi["player_id"])
+        new_pos[bench_pos] += 1
+        if (new_pos["GKP"] == 1 and new_pos["DEF"] >= 3 and
+                new_pos["MID"] >= 2 and new_pos["FWD"] >= 1):
+            valid.append(xi)
+    return valid
+
+
+def _valid_xi_to_bench(enriched: list[dict], xi_p: dict) -> list[dict]:
+    """Bench players that can validly replace xi_p in the XI."""
+    from collections import Counter
+    starters = [p for p in enriched if p["bench_order"] is None]
+    bench    = sorted([p for p in enriched if p["bench_order"] is not None],
+                      key=lambda p: p["bench_order"])
+    valid = []
+    for bp in bench:
+        new_pos = Counter(p["position"] for p in starters if p["player_id"] != xi_p["player_id"])
+        new_pos[bp["position"]] += 1
+        if (new_pos["GKP"] == 1 and new_pos["DEF"] >= 3 and
+                new_pos["MID"] >= 2 and new_pos["FWD"] >= 1):
+            valid.append(bp)
+    return valid
+
+
+def _build_swap_section(
+    title: str,
+    players: list[dict],
+    btn_label: str,
+    selected_pts: float = 0.0,
+    selected_is_bench: bool = False,
+) -> html.Div | None:
+    if not players:
+        return None
+    rows = []
+    for p in players:
+        fill = POS_COLOUR[p["position"]]
+        txt  = POS_TEXT[p["position"]]
+        pts  = p.get("predicted_pts", 0.0)
+        bench_tag = (f"  bench #{p['bench_order']}" if p.get("bench_order") else "")
+
+        # delta = incoming xi pts − outgoing xi pts
+        if selected_is_bench:
+            # selected (bench) goes into XI, p (XI) goes to bench
+            delta = selected_pts - pts
+        else:
+            # p (bench) goes into XI, selected (XI) goes to bench
+            delta = pts - selected_pts
+
+        delta_s  = f"{delta:+.1f}"
+        delta_cl = "mt-delta-good" if delta > 0 else "mt-delta-bad"
+
+        rows.append(html.Div([
+            html.Div(str(p.get("team_name", ""))[:3].upper(),
+                     className="swap-jersey", style={"background": fill, "color": txt}),
+            html.Div([
+                html.Span(p["web_name"], className="swap-name"),
+                html.Span(bench_tag,     className="swap-bench-tag"),
+            ], className="swap-info"),
+            html.Span(delta_s, className=f"swap-pts mono {delta_cl}"),
+            html.Button(
+                btn_label,
+                id={"type": "mt-swap-btn", "index": p["player_id"]},
+                className="btn-swap",
+                n_clicks=0,
+            ),
+        ], className="swap-row"))
+
+    return html.Div([
+        html.Div(title, className="swap-section-title"),
+        *rows,
+    ], className="swap-section")
 
 
 @callback(
     Output("mt-kpi-bar",    "children"),
     Output("mt-pitch-area", "children"),
     Input("mt-refresh", "data"),
+    State("mt-undo-stack", "data"),
+    State("mt-pts-delta",  "data"),
 )
-def render_pitch(refresh_count):
+def render_pitch(refresh_count, undo_stack, pts_delta):
     team, enriched = _load_enriched()
     if team is None:
         return None, _import_form()
 
     starters = sorted(
         [p for p in enriched if p["bench_order"] is None],
-        key=lambda p: (POS_ORDER.get(p["position"], 9), -p.get("predicted_pts", 0)),
+        key=lambda p: (POS_ORDER.get(p["position"], 9), p.get("row_id", 0)),
     )
     bench = sorted(
         [p for p in enriched if p["bench_order"] is not None],
@@ -454,6 +582,7 @@ def render_pitch(refresh_count):
     )
 
     ft_cls = "mt-ft-good" if free_transfers > 0 else "mt-ft-none"
+    delta  = pts_delta or 0.0
 
     kpi_bar = html.Div(
         [
@@ -482,9 +611,42 @@ def render_pitch(refresh_count):
                 style={"flex": "1", "marginBottom": 0},
             ),
             html.Div(
-                html.Button("↺  Re-import", id="mt-reimport-btn",
-                            className="btn-secondary-custom", n_clicks=0),
-                style={"display": "flex", "alignItems": "center", "paddingLeft": "12px"},
+                [
+                    html.Div(
+                        [
+                            html.Span("Transfer impact  ", className="mt-impact-label"),
+                            html.Span(
+                                f"{delta:+.1f}pts",
+                                className="mt-impact-val "
+                                          + ("mt-delta-good" if delta >= 0 else "mt-delta-bad"),
+                            ),
+                        ],
+                        className="mt-impact",
+                    ) if delta != 0.0 else None,
+                    html.Div(
+                        [
+                            html.Button(
+                                "↩ Undo", id="mt-undo-btn",
+                                className="btn-secondary-custom mt-undo-btn",
+                                n_clicks=0,
+                            ) if undo_stack else None,
+                            html.Button(
+                                "⟲ Revert squad", id="mt-revert-btn",
+                                className="btn-secondary-custom", n_clicks=0,
+                            ) if team.get("has_original") else None,
+                            html.Button(
+                                "↺  Re-import", id="mt-reimport-btn",
+                                className="btn-secondary-custom", n_clicks=0,
+                            ),
+                        ],
+                        style={"display": "flex", "gap": "8px"},
+                    ),
+                ],
+                style={
+                    "display": "flex", "flexDirection": "column",
+                    "justifyContent": "center", "alignItems": "flex-end",
+                    "gap": "6px", "paddingLeft": "16px",
+                },
             ),
         ],
         style={"display": "flex", "alignItems": "stretch", "marginBottom": "16px"},
@@ -496,13 +658,14 @@ def render_pitch(refresh_count):
 
 @callback(
     Output("mt-panel-area", "children"),
-    Input("mt-selected", "data"),
-    State("mt-refresh",  "data"),
+    Input("mt-selected",   "data"),
+    Input("mt-refresh",    "data"),
+    State("mt-undo-stack", "data"),
 )
-def render_panel(selected_id, _):
+def render_panel(selected_id, _, undo_stack):
     if selected_id is None:
         return html.Div(
-            "Click any player to see ranked replacement suggestions.",
+            "Click any player to see replacement suggestions or bench swaps.",
             className="panel-placeholder",
         )
 
@@ -510,11 +673,38 @@ def render_panel(selected_id, _):
         from app.team_manager import get_replacement_suggestions
         team, enriched = _load_enriched()
         if team is None:
-            return html.Div()
+            return html.Div(
+                "Click any player to see replacement suggestions or bench swaps.",
+                className="panel-placeholder",
+            )
 
         sel_list = [p for p in enriched if p["player_id"] == selected_id]
         if not sel_list:
-            return html.Div()
+            return html.Div(
+                "Click any player to see replacement suggestions or bench swaps.",
+                className="panel-placeholder",
+            )
+
+        sel      = sel_list[0]
+        is_bench = sel["bench_order"] is not None
+
+        sel_pts = sel.get("predicted_pts", 0.0)
+        if is_bench:
+            swap_section = _build_swap_section(
+                "Move into XI", _valid_bench_to_xi(enriched, sel), "↑ Into XI",
+                selected_pts=sel_pts, selected_is_bench=True,
+            )
+        else:
+            swap_section = _build_swap_section(
+                "Move to bench", _valid_xi_to_bench(enriched, sel), "↓ To bench",
+                selected_pts=sel_pts, selected_is_bench=False,
+            )
+
+        # Determine if any suggestion is a free reversal of the last transfer
+        reversal_pid = None
+        stack = undo_stack or []
+        if stack and selected_id == stack[-1]["in_player_id"]:
+            reversal_pid = stack[-1]["out_player_id"]
 
         squad_ids   = [p["player_id"] for p in enriched]
         avail       = get_available_players()
@@ -525,22 +715,23 @@ def render_panel(selected_id, _):
             players_df=avail,
             free_transfers=team["free_transfers"],
         )
-        return _build_panel(sel_list[0], suggestions, team["bank"], team["free_transfers"])
+
+        # Strip the -4 penalty from the reversal candidate's displayed pts_delta
+        if reversal_pid and team["free_transfers"] < 1:
+            suggestions = [
+                {**s, "pts_delta": round(s["pts_delta"] + 4.0, 2)}
+                if s["player_id"] == reversal_pid else s
+                for s in suggestions
+            ]
+
+        return _build_panel(sel, suggestions, team["bank"], team["free_transfers"],
+                            swap_section=swap_section, reversal_pid=reversal_pid)
     except Exception as exc:
         return html.Div(
             f"Error loading suggestions: {exc}",
             style={"padding": "16px", "color": "var(--bad)"},
         )
 
-
-
-@callback(
-    Output("mt-selected", "data", allow_duplicate=True),
-    Input("mt-close-panel", "n_clicks"),
-    prevent_initial_call=True,
-)
-def close_panel(_):
-    return None
 
 
 @callback(
@@ -575,23 +766,112 @@ def stage_transfer(n_clicks_list, selected_id):
 
 
 @callback(
-    Output("mt-refresh",  "data",  allow_duplicate=True),
-    Output("mt-selected", "data",  allow_duplicate=True),
-    Input("mt-confirm",   "submit_n_clicks"),
-    State("mt-pending-xfer", "data"),
-    State("mt-refresh",      "data"),
+    Output("mt-refresh", "data", allow_duplicate=True),
+    Input({"type": "mt-swap-btn", "index": ALL}, "n_clicks"),
+    State("mt-selected", "data"),
+    State("mt-refresh",  "data"),
     prevent_initial_call=True,
 )
-def confirm_transfer(submit_n, pending, refresh_count):
+def apply_swap(n_clicks_list, selected_id, refresh_count):
+    from dash import ctx
+    if not ctx.triggered or not any(n for n in n_clicks_list if n):
+        return dash.no_update
+    tid = ctx.triggered_id
+    if not tid or selected_id is None:
+        return dash.no_update
+
+    target_pid = tid["index"]
+    from app.team_manager import load_team, swap_positions, reassign_captaincy
+    team = load_team()
+    if not team:
+        return dash.no_update
+
+    sel_row    = next((p for p in team["players"] if p["player_id"] == selected_id), None)
+    target_row = next((p for p in team["players"] if p["player_id"] == target_pid), None)
+    if not sel_row or not target_row:
+        return dash.no_update
+
+    if sel_row["bench_order"] is not None and target_row["bench_order"] is None:
+        swap_positions(bench_pid=selected_id, xi_pid=target_pid)
+    elif sel_row["bench_order"] is None and target_row["bench_order"] is not None:
+        swap_positions(bench_pid=target_pid, xi_pid=selected_id)
+    else:
+        return dash.no_update
+
+    reassign_captaincy()
+    return (refresh_count or 0) + 1
+
+
+@callback(
+    Output("mt-refresh",     "data", allow_duplicate=True),
+    Output("mt-undo-stack",  "data"),
+    Output("mt-pts-delta",   "data"),
+    Input("mt-confirm",      "submit_n_clicks"),
+    State("mt-pending-xfer", "data"),
+    State("mt-refresh",      "data"),
+    State("mt-undo-stack",   "data"),
+    State("mt-pts-delta",    "data"),
+    prevent_initial_call=True,
+)
+def confirm_transfer(submit_n, pending, refresh_count, undo_stack, pts_delta):
     if not submit_n or not pending:
-        return dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
+
+    stack = list(undo_stack or [])
+
+    # Detect reversal: selecting the original player back → treat as undo, no extra hit
+    if (stack and
+            int(pending["in"]) == stack[-1]["out_player_id"] and
+            int(pending["out"]) == stack[-1]["in_player_id"]):
+        from app.team_manager import undo_transfer
+        undo_info  = stack.pop()
+        undo_transfer(undo_info)
+        prev_delta = round((pts_delta or 0.0) - undo_info.get("pts_delta", 0.0), 2)
+        return (refresh_count or 0) + 1, stack, prev_delta
+
     from app.team_manager import apply_transfer
-    apply_transfer(
+    result = apply_transfer(
         out_player_id=int(pending["out"]),
         in_player_id=int(pending["in"]),
         in_player_cost=float(pending["cost"]),
     )
-    return (refresh_count or 0) + 1, None
+    undo = result["undo"]
+
+    all_p   = get_players_with_predictions()
+    out_row = all_p[all_p["player_id"] == pending["out"]]
+    in_row  = all_p[all_p["player_id"] == pending["in"]]
+    hit     = undo["old_ft"] < 1
+    delta   = 0.0
+    if not out_row.empty and not in_row.empty:
+        delta = (float(in_row.iloc[0]["predicted_pts"])
+                 - float(out_row.iloc[0]["predicted_pts"])
+                 - (4.0 if hit else 0.0))
+    undo["pts_delta"] = delta
+
+    stack.append(undo)
+    new_total = round((pts_delta or 0.0) + delta, 2)
+    return (refresh_count or 0) + 1, stack, new_total
+
+
+@callback(
+    Output("mt-refresh",    "data", allow_duplicate=True),
+    Output("mt-undo-stack", "data", allow_duplicate=True),
+    Output("mt-pts-delta",  "data", allow_duplicate=True),
+    Input("mt-undo-btn",    "n_clicks"),
+    State("mt-undo-stack",  "data"),
+    State("mt-refresh",     "data"),
+    State("mt-pts-delta",   "data"),
+    prevent_initial_call=True,
+)
+def undo_last_transfer(n_clicks, undo_stack, refresh_count, pts_delta):
+    if not n_clicks or not undo_stack:
+        return dash.no_update, dash.no_update, dash.no_update
+    from app.team_manager import undo_transfer
+    stack     = list(undo_stack)
+    undo_info = stack.pop()
+    undo_transfer(undo_info)
+    prev_delta = round((pts_delta or 0.0) - undo_info.get("pts_delta", 0.0), 2)
+    return (refresh_count or 0) + 1, stack, prev_delta
 
 
 @callback(
@@ -603,7 +883,9 @@ def confirm_transfer(submit_n, pending, refresh_count):
     State("mt-refresh",       "data"),
     prevent_initial_call=True,
 )
-def import_team(_, team_id, free_transfers, refresh_count):
+def import_team(n_clicks, team_id, free_transfers, refresh_count):
+    if not n_clicks:
+        return dash.no_update, dash.no_update
     if not team_id:
         return dash.no_update, dbc.Alert("Enter your FPL team ID.", color="warning")
 
@@ -639,17 +921,38 @@ def import_team(_, team_id, free_transfers, refresh_count):
         })
 
     ft = int(free_transfers) if free_transfers is not None else 1
-    save_team(picks=picks, bank=data["bank"], free_transfers=ft, fpl_team_id=team_id)
+    save_team(picks=picks, bank=data["bank"], free_transfers=ft,
+              fpl_team_id=team_id, is_original=True)
     return (refresh_count or 0) + 1, None
 
 
 @callback(
-    Output("mt-refresh",     "data", allow_duplicate=True),
+    Output("mt-refresh",    "data", allow_duplicate=True),
+    Output("mt-undo-stack", "data", allow_duplicate=True),
+    Output("mt-pts-delta",  "data", allow_duplicate=True),
+    Input("mt-revert-btn", "n_clicks"),
+    State("mt-refresh",    "data"),
+    prevent_initial_call=True,
+)
+def revert_to_original(n_clicks, refresh_count):
+    if not n_clicks:
+        return dash.no_update, dash.no_update, dash.no_update
+    from app.team_manager import restore_original_squad
+    restore_original_squad()
+    return (refresh_count or 0) + 1, [], 0.0
+
+
+@callback(
+    Output("mt-refresh",    "data", allow_duplicate=True),
+    Output("mt-undo-stack", "data", allow_duplicate=True),
+    Output("mt-pts-delta",  "data", allow_duplicate=True),
     Input("mt-reimport-btn", "n_clicks"),
     State("mt-refresh",      "data"),
     prevent_initial_call=True,
 )
-def reimport_team(_, refresh_count):
+def reimport_team(n_clicks, refresh_count):
+    if not n_clicks:
+        return dash.no_update, dash.no_update, dash.no_update
     from app.team_manager import delete_team
     delete_team()
-    return (refresh_count or 0) + 1
+    return (refresh_count or 0) + 1, [], 0.0

@@ -1173,6 +1173,14 @@ input[type=number].no-spinner { -moz-appearance: textfield; }
   color: var(--ink);
   margin-left: 4px;
 }
+.panel-pos {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-left: 6px;
+  vertical-align: middle;
+}
 .panel-meta {
   font-size: 11px;
   color: var(--ink-3);
@@ -1239,6 +1247,7 @@ input[type=number].no-spinner { -moz-appearance: textfield; }
   text-transform: uppercase;
 }
 .sugg-cost, .sugg-pts, .sugg-delta { text-align: right; font-size: 12px; }
+.sugg-row .btn-apply { margin-left: 8px; }
 
 /* Delta colours */
 .mt-delta-good { color: var(--good); }
@@ -1247,6 +1256,100 @@ input[type=number].no-spinner { -moz-appearance: textfield; }
 /* Free transfer badge */
 .mt-ft-good { color: var(--good) !important; }
 .mt-ft-none { color: var(--bad)  !important; }
+
+/* Inline transfer impact (right side of KPI bar) */
+.mt-impact {
+  font-size: 11px;
+  white-space: nowrap;
+  text-align: right;
+}
+.mt-impact-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mt-impact-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Bench ↔ XI swap section */
+.swap-section {
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 8px 12px 6px;
+}
+.swap-section-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 6px;
+}
+.swap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.swap-jersey {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.swap-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.swap-name  { font-size: 12px; font-weight: 600; }
+.swap-bench-tag {
+  font-size: 9px;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+}
+.swap-pts {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.btn-swap {
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-swap:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* Panel flash animation when same player is re-clicked */
+@keyframes mt-flash {
+  0%   { opacity: 1; }
+  35%  { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+.mt-panel-flash { animation: mt-flash 0.32s ease; }
+
+/* Undo button in KPI bar */
+.mt-undo-btn { color: var(--ink-2) !important; }
 
 /* Apply / confirm buttons */
 .btn-apply {
@@ -1268,6 +1371,12 @@ input[type=number].no-spinner { -moz-appearance: textfield; }
   border-color: var(--bad);
 }
 .btn-apply-hit:hover { background: var(--bad); color: #fff; }
+.btn-apply-undo {
+  background: oklch(0.56 0.14 150 / 0.1);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-apply-undo:hover { background: var(--accent); color: #fff; }
 
 /* Secondary action button (Re-import) */
 .btn-secondary-custom {
