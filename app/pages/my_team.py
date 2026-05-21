@@ -295,9 +295,7 @@ layout = html.Div(
         dcc.Store(id="mt-pending-xfer",      data=None),
         dcc.Store(id="mt-undo-stack",        data=[]),
         dcc.Store(id="mt-pts-delta",         data=0.0),
-        dcc.Store(id="mt-xfer-open",        data=False),
-        dcc.Store(id="mt-xfer-btn-relay",   data=None),
-        dcc.Store(id="mt-xfer-close-relay", data=None),
+        dcc.Store(id="mt-xfer-open", data=False),
         dcc.Store(id="mt-sel-dummy"),
         dcc.Store(id="mt-click-dummy"),
         dcc.Interval(id="mt-click-poll", interval=150, n_intervals=0),
@@ -412,31 +410,6 @@ dash.clientside_callback(
     prevent_initial_call=True,
 )
 
-# 5. Relay mt-xfer-btn (dynamic) → static store so toggle_xfer_panel has no dynamic Inputs.
-dash.clientside_callback(
-    """
-    function(n) {
-        if (!n) return window.dash_clientside.no_update;
-        return n;
-    }
-    """,
-    Output("mt-xfer-btn-relay", "data"),
-    Input("mt-xfer-btn", "n_clicks"),
-    prevent_initial_call=True,
-)
-
-# 6. Route xfer-rec close button through its own relay store.
-dash.clientside_callback(
-    """
-    function(n) {
-        if (!n) return window.dash_clientside.no_update;
-        return n;
-    }
-    """,
-    Output("mt-xfer-close-relay", "data"),
-    Input("mt-xfer-close", "n_clicks"),
-    prevent_initial_call=True,
-)
 
 # 3. Poll every 150 ms; when a click has been queued, push it to the relay store.
 #    Writing to mt-click-relay (primary output, no allow_duplicate) guarantees that
@@ -1064,41 +1037,32 @@ def _build_xfer_rec_card(transfers: list) -> html.Div:
                               style={"padding": "12px 0", "color": INK_3})]
 
     return html.Div([
-        html.Div([
+        html.Div(
             html.Div("Best transfers for your squad", className="card-title"),
-            html.Button("✕", id="mt-xfer-close", className="panel-close", n_clicks=0),
-        ], className="card-hd"),
+            className="card-hd",
+        ),
         html.Div([kpi_strip, header, *body], className="card-body pad-lg"),
     ], className="card", style={"marginTop": "16px"})
 
 
 @callback(
     Output("mt-xfer-open", "data"),
-    Input("mt-xfer-btn-relay",   "data"),
-    Input("mt-xfer-close-relay", "data"),
-    State("mt-xfer-open",        "data"),
+    Input("mt-xfer-btn",   "n_clicks"),
+    State("mt-xfer-open",  "data"),
     prevent_initial_call=True,
 )
-def toggle_xfer_panel(btn_relay, close_relay, is_open):
-    from dash import ctx
-    trig = ctx.triggered_id
-    if trig == "mt-xfer-btn-relay":
-        if not btn_relay:
-            return dash.no_update
-        return not (is_open or False)
-    if trig == "mt-xfer-close-relay":
-        if not close_relay:
-            return dash.no_update
-        return False
-    return dash.no_update
+def toggle_xfer_panel(n_clicks, is_open):
+    if not n_clicks:
+        return dash.no_update
+    return not (is_open or False)
 
 
 @callback(
     Output("mt-xfer-rec-area", "children"),
     Input("mt-xfer-open", "data"),
-    Input("mt-refresh",   "data"),
+    prevent_initial_call=True,
 )
-def render_xfer_rec(is_open, _):
+def render_xfer_rec(is_open):
     if not is_open:
         return None
     from app.team_manager import load_team
