@@ -50,13 +50,11 @@ app.clientside_callback(
             '/':           'nav-home',
             '/top50':      'nav-top50',
             '/optimizer':  'nav-optimizer',
-            '/transfers':  'nav-transfers',
             '/my-team':    'nav-my-team',
             '/results':    'nav-results',
         };
         const base   = 'nav-item';
         const active = 'nav-item active';
-        // pathname can be e.g. "/player/123" — match longest prefix
         let best = null;
         let bestLen = 0;
         for (const [path, id] of Object.entries(map)) {
@@ -65,7 +63,7 @@ app.clientside_callback(
                 bestLen = path.length;
             }
         }
-        const ids = ['nav-home', 'nav-top50', 'nav-optimizer', 'nav-transfers', 'nav-my-team', 'nav-results'];
+        const ids = ['nav-home', 'nav-top50', 'nav-optimizer', 'nav-my-team', 'nav-results'];
         return ids.map(id => id === best ? active : base);
     }
     """,
@@ -73,7 +71,6 @@ app.clientside_callback(
         Output("nav-home",      "className"),
         Output("nav-top50",     "className"),
         Output("nav-optimizer", "className"),
-        Output("nav-transfers", "className"),
         Output("nav-my-team",   "className"),
         Output("nav-results",   "className"),
     ],

@@ -1378,6 +1378,40 @@ input[type=number].no-spinner { -moz-appearance: textfield; }
 }
 .btn-apply-undo:hover { background: var(--accent); color: #fff; }
 
+/* ── Best-transfers recommendation table ── */
+.xr-header, .xr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.xr-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  border-bottom: 1px solid var(--rule-soft);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+}
+.xr-row {
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 13px;
+}
+.xr-row:last-child { border-bottom: none; }
+.xr-rank  { width: 20px; text-align: right; color: var(--ink-3); font-size: 11px; flex-shrink: 0; }
+.xr-out   { flex: 1; color: var(--bad); font-size: 12px; min-width: 0; }
+.xr-in    { flex: 1; color: var(--good); font-size: 12px; min-width: 0; }
+.xr-pts   { width: 36px; text-align: right; color: var(--ink-3); font-size: 12px; flex-shrink: 0; }
+.xr-arrow { width: 16px; text-align: center; color: var(--ink-4); flex-shrink: 0; }
+.xr-gross { width: 44px; text-align: right; color: var(--ink-2); font-size: 12px; flex-shrink: 0; }
+.xr-hit   { width: 36px; text-align: center; font-size: 11px; flex-shrink: 0; }
+.xr-hit-free { color: var(--good); }
+.xr-hit-cost { color: var(--bad); }
+.xr-net   { width: 48px; text-align: right; font-weight: 600; flex-shrink: 0; }
+.xr-cost  { width: 44px; text-align: right; color: var(--ink-3); font-size: 12px; flex-shrink: 0; }
+
 /* Secondary action button (Re-import) */
 .btn-secondary-custom {
   background: transparent;

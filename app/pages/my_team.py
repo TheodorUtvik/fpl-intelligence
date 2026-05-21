@@ -288,13 +288,15 @@ def _import_form() -> html.Div:
 
 layout = html.Div(
     [
-        dcc.Store(id="mt-selected",     data=None),
-        dcc.Store(id="mt-click-relay",  data=None),  # poll → server bridge
-        dcc.Store(id="mt-close-relay",  data=None),  # close btn → server bridge
-        dcc.Store(id="mt-refresh",      data=0),
-        dcc.Store(id="mt-pending-xfer", data=None),
-        dcc.Store(id="mt-undo-stack",   data=[]),
-        dcc.Store(id="mt-pts-delta",    data=0.0),
+        dcc.Store(id="mt-selected",          data=None),
+        dcc.Store(id="mt-click-relay",       data=None),
+        dcc.Store(id="mt-close-relay",       data=None),
+        dcc.Store(id="mt-refresh",           data=0),
+        dcc.Store(id="mt-pending-xfer",      data=None),
+        dcc.Store(id="mt-undo-stack",        data=[]),
+        dcc.Store(id="mt-pts-delta",         data=0.0),
+        dcc.Store(id="mt-xfer-open",         data=False),
+        dcc.Store(id="mt-xfer-close-relay",  data=None),
         dcc.Store(id="mt-sel-dummy"),
         dcc.Store(id="mt-click-dummy"),
         dcc.Interval(id="mt-click-poll", interval=150, n_intervals=0),
@@ -326,6 +328,9 @@ layout = html.Div(
             ],
             style={"display": "flex", "gap": "16px", "alignItems": "flex-start"},
         ),
+
+        # Best-transfers recommendation panel (shown/hidden via mt-xfer-open)
+        html.Div(id="mt-xfer-rec-area"),
     ],
     className="page",
 )
@@ -403,6 +408,19 @@ dash.clientside_callback(
     """,
     Output("mt-close-relay", "data"),
     Input("mt-close-panel", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+# 5. Route xfer-rec close button through its own relay store.
+dash.clientside_callback(
+    """
+    function(n) {
+        if (!n) return window.dash_clientside.no_update;
+        return n;
+    }
+    """,
+    Output("mt-xfer-close-relay", "data"),
+    Input("mt-xfer-close", "n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -635,11 +653,15 @@ def render_pitch(refresh_count, undo_stack, pts_delta):
                                 className="btn-secondary-custom", n_clicks=0,
                             ) if team.get("has_original") else None,
                             html.Button(
+                                "Best transfers", id="mt-xfer-btn",
+                                className="btn-secondary-custom", n_clicks=0,
+                            ),
+                            html.Button(
                                 "↺  Re-import", id="mt-reimport-btn",
                                 className="btn-secondary-custom", n_clicks=0,
                             ),
                         ],
-                        style={"display": "flex", "gap": "8px"},
+                        style={"display": "flex", "gap": "8px", "flexWrap": "wrap"},
                     ),
                 ],
                 style={
@@ -956,3 +978,129 @@ def reimport_team(n_clicks, refresh_count):
     from app.team_manager import delete_team
     delete_team()
     return (refresh_count or 0) + 1, [], 0.0
+
+
+# ── Best-transfers recommendation ─────────────────────────────────────────────
+
+def _build_xfer_rec_card(transfers: list) -> html.Div:
+    profitable = [t for t in transfers if t["net_gain"] > 0]
+    best       = transfers[0]["net_gain"] if transfers else 0.0
+    one_t      = sum(1 for t in transfers if t["n_transfers"] == 1)
+    two_t      = sum(1 for t in transfers if t["n_transfers"] == 2)
+
+    kpi_strip = html.Div([
+        html.Div([
+            html.Div("Profitable", className="kpi-label"),
+            html.Div(str(len(profitable)), className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("Best net gain", className="kpi-label"),
+            html.Div(
+                f"{best:+.1f}pts",
+                className=f"kpi-value mono {'mt-delta-good' if best > 0 else 'mt-delta-bad'}",
+            ),
+        ], className="kpi"),
+        html.Div([
+            html.Div("1-transfer", className="kpi-label"),
+            html.Div(str(one_t), className="kpi-value mono"),
+        ], className="kpi"),
+        html.Div([
+            html.Div("2-transfer", className="kpi-label"),
+            html.Div(str(two_t), className="kpi-value mono"),
+        ], className="kpi"),
+    ], className="kpi-grid", style={"marginBottom": "12px"})
+
+    header = html.Div([
+        html.Span("#",      className="xr-rank"),
+        html.Span("Out",    className="xr-out"),
+        html.Span("xPts",   className="xr-pts mono"),
+        html.Span("",       className="xr-arrow"),
+        html.Span("In",     className="xr-in"),
+        html.Span("xPts",   className="xr-pts mono"),
+        html.Span("Gross",  className="xr-gross mono"),
+        html.Span("Hit",    className="xr-hit"),
+        html.Span("Net",    className="xr-net mono"),
+        html.Span("£Δ",     className="xr-cost mono"),
+    ], className="xr-header")
+
+    rows = []
+    for i, t in enumerate(transfers[:15], 1):
+        out_s  = " + ".join(t["transfers_out"])
+        in_s   = " + ".join(t["transfers_in"])
+        net    = t["net_gain"]
+        hit    = t["hit"]
+        net_cl = "mt-delta-good" if net > 0 else "mt-delta-bad"
+        rows.append(html.Div([
+            html.Span(str(i),                   className="xr-rank mono"),
+            html.Span(out_s,                     className="xr-out"),
+            html.Span(f"{t['out_pts']:.1f}",    className="xr-pts mono"),
+            html.Span("→",                       className="xr-arrow"),
+            html.Span(in_s,                      className="xr-in"),
+            html.Span(f"{t['in_pts']:.1f}",     className="xr-pts mono"),
+            html.Span(f"{t['gross_gain']:+.1f}", className="xr-gross mono"),
+            html.Span(
+                "Free" if hit == 0 else f"−{hit}",
+                className="xr-hit " + ("xr-hit-free" if hit == 0 else "xr-hit-cost"),
+            ),
+            html.Span(f"{net:+.1f}", className=f"xr-net mono {net_cl}"),
+            html.Span(f"{t['cost_change']:+.1f}m", className="xr-cost mono"),
+        ], className="xr-row"))
+
+    body = rows or [html.Div("No transfer options found.",
+                              style={"padding": "12px 0", "color": INK_3})]
+
+    return html.Div([
+        html.Div([
+            html.Div("Best transfers for your squad", className="card-title"),
+            html.Button("✕", id="mt-xfer-close", className="panel-close", n_clicks=0),
+        ], className="card-hd"),
+        html.Div([kpi_strip, header, *body], className="card-body pad-lg"),
+    ], className="card", style={"marginTop": "16px"})
+
+
+@callback(
+    Output("mt-xfer-open", "data"),
+    Input("mt-xfer-btn",          "n_clicks"),
+    Input("mt-xfer-close-relay",  "data"),
+    State("mt-xfer-open",         "data"),
+    prevent_initial_call=True,
+)
+def toggle_xfer_panel(btn_clicks, close_relay, is_open):
+    from dash import ctx
+    trig = ctx.triggered_id
+    if trig == "mt-xfer-btn":
+        if not btn_clicks:
+            return dash.no_update
+        return not (is_open or False)
+    if trig == "mt-xfer-close-relay":
+        if not close_relay:
+            return dash.no_update
+        return False
+    return dash.no_update
+
+
+@callback(
+    Output("mt-xfer-rec-area", "children"),
+    Input("mt-xfer-open", "data"),
+    Input("mt-refresh",   "data"),
+)
+def render_xfer_rec(is_open, _):
+    if not is_open:
+        return None
+    from app.team_manager import load_team
+    from app.data_loader import get_optimizer
+    team = load_team()
+    if not team:
+        return html.Div("No team loaded.", style={"padding": "16px", "color": INK_3})
+    squad_ids = [p["player_id"] for p in team["players"]]
+    avail     = get_available_players()
+    try:
+        transfers = get_optimizer().recommend_transfers(
+            current_squad_ids=squad_ids,
+            players_df=avail,
+            free_transfers=team["free_transfers"],
+            bank=team["bank"],
+        )
+    except Exception as exc:
+        return html.Div(f"Error: {exc}", style={"color": "var(--bad)", "padding": "16px"})
+    return _build_xfer_rec_card(transfers)
