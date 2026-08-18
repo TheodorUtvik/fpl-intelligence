@@ -19,8 +19,20 @@ def fetch_squad_from_fpl(team_id: int, gw: int) -> dict:
     """Fetch squad from the public FPL picks endpoint — no auth required."""
     url  = _FPL_PICKS_URL.format(team_id=team_id, gw=gw)
     resp = requests.get(url, timeout=10, headers={"User-Agent": "fpl-intelligence/1.0"})
+    if resp.status_code == 503:
+        raise RuntimeError("FPL servers are currently being updated. Try again in a few minutes.")
+    if resp.status_code == 404:
+        raise RuntimeError(f"Team ID {team_id} not found. Check your team ID and try again.")
     resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError("FPL API returned an unexpected response. Try again later.")
+    if isinstance(data, str):
+        raise RuntimeError(f"FPL API: {data}")
+    if "picks" not in data or "entry_history" not in data:
+        detail = data.get("detail", "Unexpected API response")
+        raise RuntimeError(f"FPL API: {detail}")
     hist = data["entry_history"]
     return {
         "picks":       data["picks"],
