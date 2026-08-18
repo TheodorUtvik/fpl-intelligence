@@ -895,14 +895,23 @@ def undo_last_transfer(n_clicks, undo_stack, refresh_count, pts_delta):
 def import_team(n_clicks, team_id, free_transfers, refresh_count):
     if not n_clicks:
         return dash.no_update, dash.no_update
-    if not team_id:
+    if team_id is None or str(team_id).strip() == "":
         return dash.no_update, dbc.Alert("Enter your FPL team ID.", color="warning")
+    try:
+        team_id = int(team_id)
+    except (ValueError, TypeError):
+        return dash.no_update, dbc.Alert("Team ID must be a number.", color="warning")
+    if team_id < 1 or team_id > 20_000_000:
+        return dash.no_update, dbc.Alert(
+            "Team ID must be between 1 and 20,000,000.", color="warning"
+        )
 
-    team_id = int(team_id)
     from app.team_manager import fetch_squad_from_fpl, save_team
     try:
         gw   = get_latest_gw()
         data = fetch_squad_from_fpl(team_id, gw)
+    except RuntimeError as e:
+        return dash.no_update, dbc.Alert(str(e), color="danger")
     except Exception as e:
         return dash.no_update, dbc.Alert(f"Could not fetch team: {e}", color="danger")
 
