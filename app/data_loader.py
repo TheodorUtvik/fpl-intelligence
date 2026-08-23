@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.models.predict import FPLPredictor  # noqa: E402
 from src.models.optimize import FPLOptimizer  # noqa: E402
+from src.utils import completeness_threshold  # noqa: E402
 
 PROCESSED   = ROOT / "data" / "processed"
 PREDICTIONS = ROOT / "data" / "predictions"
@@ -28,33 +29,65 @@ MODELS      = ROOT / "models"
 POSITION_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 POS_ORDER    = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
 
+# Columns returned by get_players_with_predictions() — kept as a constant
+# so the cold-start empty-DataFrame fallback has the same shape callers expect.
+POOL_COLUMNS = [
+    "player_id", "now_cost", "predicted_pts", "games_played",
+    "rolling_pts_3gw", "rolling_xg_3gw", "rolling_xa_3gw",
+    "ownership_pct", "fdr_next", "web_name", "position", "team",
+    "status", "team_name", "pts_per_million", "pos_order",
+]
+
 
 @lru_cache(maxsize=1)
 def load_features() -> pd.DataFrame:
-    return pd.read_parquet(PROCESSED / "features.parquet")
+    """Returns an empty DataFrame if features.parquet doesn't exist yet
+    (e.g. right after a season rollover, before Stage 2 has run)."""
+    path = PROCESSED / "features.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
 
 
 @lru_cache(maxsize=1)
 def load_fpl_players() -> pd.DataFrame:
-    df = pd.read_parquet(RAW / "fpl_players.parquet")
+    path = RAW / "fpl_players.parquet"
+    if not path.exists():
+        return pd.DataFrame(columns=[
+            "id", "web_name", "position", "team", "status", "now_cost", "element_type",
+        ])
+    df = pd.read_parquet(path)
     df["position"] = df["element_type"].map(POSITION_MAP)
     return df
 
 
 @lru_cache(maxsize=1)
 def load_fixtures() -> pd.DataFrame:
-    return pd.read_parquet(RAW / "fpl_fixtures.parquet")
+    path = RAW / "fpl_fixtures.parquet"
+    return pd.read_parquet(path) if path.exists() else pd.DataFrame()
 
 
 @lru_cache(maxsize=1)
 def load_teams() -> pd.DataFrame:
-    return pd.read_parquet(RAW / "fpl_teams.parquet")
+    path = RAW / "fpl_teams.parquet"
+    if not path.exists():
+        return pd.DataFrame(columns=["id", "name", "short_name"])
+    return pd.read_parquet(path)
 
 
 @lru_cache(maxsize=1)
-def get_predictor() -> FPLPredictor:
+def get_predictor() -> FPLPredictor | None:
+    """
+    Returns the trained predictor, or None if no model has been trained
+    yet for the current season (e.g. right after a season rollover, before
+    enough gameweeks have accrued to train on). Callers must check for
+    None rather than assuming a model is always available.
+    """
     p = FPLPredictor(models_dir=MODELS)
-    p.load()
+    try:
+        p.load()
+    except FileNotFoundError:
+        return None
     return p
 
 
@@ -66,27 +99,42 @@ def get_optimizer() -> FPLOptimizer:
 @lru_cache(maxsize=1)
 def get_latest_gw() -> int:
     """
-    Returns the latest gameweek that has enough data to be considered complete.
-    Threshold of 650 players ensures partial GWs (mid-week, still in progress)
-    are ignored — the app stays on the last fully-played GW instead of
-    showing predictions derived from incomplete data.
+    Returns the latest gameweek that has enough data to be considered
+    complete, or 0 if no complete gameweek exists yet (season just
+    started, or features haven't been built). Callers should treat 0 as
+    "no predictions available yet" rather than a real gameweek number.
     """
     features = load_features()
+    if features.empty or "round" not in features.columns:
+        return 0
     counts = features.groupby("round").size()
-    complete = counts[counts >= 650].index
+    threshold = completeness_threshold(counts)
+    complete = counts[counts >= threshold].index
+    if complete.empty:
+        return 0
     return int(complete.max())
+
+
+def predictions_available() -> bool:
+    """True once there's at least one complete current-season GW and a trained model."""
+    return get_latest_gw() > 0 and get_predictor() is not None
 
 
 @lru_cache(maxsize=1)
 def get_players_with_predictions() -> pd.DataFrame:
     """
-    Returns the full player pool for the latest complete GW,
-    including predicted points and metadata.
+    Returns the full player pool for the latest complete GW, including
+    predicted points and metadata. Returns an empty DataFrame (with the
+    usual columns) if no complete GW or trained model exists yet —
+    callers should check `.empty` and show a "season warming up" state.
     """
+    latest_gw = get_latest_gw()
+    predictor = get_predictor()
+    if latest_gw == 0 or predictor is None:
+        return pd.DataFrame(columns=POOL_COLUMNS)
+
     features  = load_features()
     fpl       = load_fpl_players()
-    predictor = get_predictor()
-    latest_gw = get_latest_gw()
 
     latest_df = features[features["round"] == latest_gw].copy()
     latest_df["predicted_pts"] = predictor.predict(latest_df)
@@ -186,12 +234,16 @@ def load_predictions_for_gw(predict_gw: int) -> pd.DataFrame:
 def get_features_for_player(player_id: int) -> pd.DataFrame:
     """Return all feature rows for a single player, sorted by round."""
     features = load_features()
+    if features.empty:
+        return features
     return features[features["player_id"] == player_id].sort_values("round").reset_index(drop=True)
 
 
 @lru_cache(maxsize=1)
 def get_available_players() -> pd.DataFrame:
     pool = get_players_with_predictions()
+    if pool.empty:
+        return pool
     avail = pool[pool["status"] == "a"].copy()
     if avail["position"].value_counts().get("GKP", 0) < 2:
         return pool

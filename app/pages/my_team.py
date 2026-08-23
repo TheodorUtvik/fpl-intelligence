@@ -906,9 +906,17 @@ def import_team(n_clicks, team_id, free_transfers, refresh_count):
             "Team ID must be between 1 and 20,000,000.", color="warning"
         )
 
+    gw = get_latest_gw()
+    if gw == 0:
+        return dash.no_update, dbc.Alert(
+            "Team import isn't available yet — it needs at least one "
+            "completed gameweek of current-season data. Check back after "
+            "GW1 results are in.",
+            color="info",
+        )
+
     from app.team_manager import fetch_squad_from_fpl, save_team
     try:
-        gw   = get_latest_gw()
         data = fetch_squad_from_fpl(team_id, gw)
     except RuntimeError as e:
         return dash.no_update, dbc.Alert(str(e), color="danger")

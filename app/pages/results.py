@@ -21,6 +21,7 @@ from app.data_loader import (
     load_teams,
 )
 from app.components.club_badge import render_club_badge
+from app.components.warming_up import warming_up_alert
 
 dash.register_page(__name__, path="/results", name="GW Results")
 
@@ -38,6 +39,9 @@ RAW = ROOT / "data" / "raw"
 def _build_comparison(predict_from_gw: int, actual_gw: int) -> pd.DataFrame:
     features  = load_features()
     predictor = get_predictor()
+    if features.empty or predictor is None:
+        return pd.DataFrame()
+
     teams = load_teams()[["id", "short_name"]].rename(
         columns={"id": "team", "short_name": "team_name"}
     )
@@ -183,6 +187,9 @@ def _tab_content(predict_from_gw: int, actual_gw: int) -> html.Div:
 def layout():
     latest_gw  = get_latest_gw()
     predict_gw = latest_gw + 1
+
+    if latest_gw == 0:
+        return warming_up_alert("Model performance history")
 
     gw_pairs = [
         (predict_gw - 1 - i, predict_gw - i)

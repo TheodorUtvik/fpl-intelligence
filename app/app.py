@@ -84,6 +84,7 @@ def update_topbar(pathname):
     from app.data_loader import get_latest_gw
     latest_gw  = get_latest_gw()
     predict_gw = latest_gw + 1
+    warming_up = latest_gw == 0
 
     section, page = BREADCRUMBS.get(pathname or "/", ("Actions", (pathname or "").lstrip("/")))
 
@@ -104,10 +105,11 @@ def update_topbar(pathname):
             html.Div(
                 [
                     html.Div(
-                        [html.Span(className="pulse"), f"GW {latest_gw} data"],
+                        [html.Span(className="pulse"),
+                         "season warming up" if warming_up else f"GW {latest_gw} data"],
                         className="status-chip",
                     ),
-                    html.Span(f"predicting GW {predict_gw}"),
+                    html.Span("" if warming_up else f"predicting GW {predict_gw}"),
                 ],
                 className="topbar-right",
             ),

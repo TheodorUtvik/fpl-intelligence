@@ -204,6 +204,13 @@ layout = html.Div([
 )
 def run_optimizer(n_clicks, squad_type):
     players   = get_available_players()
+    if players.empty:
+        return dbc.Alert(
+            "Predictions aren't ready yet — the model needs at least one "
+            "completed current-season gameweek of data before the optimizer "
+            "can run.",
+            color="info",
+        )
     optimizer = get_optimizer()
 
     if squad_type == "xi":

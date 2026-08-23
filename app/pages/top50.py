@@ -112,6 +112,16 @@ def update_table(selected_gw, pos_filter, sort_col):
 
     if selected_gw == predict_gw:
         df = get_players_with_predictions().copy()
+        if df.empty:
+            return (
+                dbc.Alert(
+                    "Predictions aren't ready yet — the model needs at least one "
+                    "completed current-season gameweek of data.",
+                    color="info",
+                ),
+                "",
+                "—",
+            )
         subtitle    = (
             f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data"
         )

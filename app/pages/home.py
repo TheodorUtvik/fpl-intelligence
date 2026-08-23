@@ -12,6 +12,7 @@ from app.data_loader import (
     get_latest_gw,
     get_players_with_predictions,
 )
+from app.components.warming_up import warming_up_alert
 
 dash.register_page(__name__, path="/", name="Home")
 
@@ -146,6 +147,9 @@ def layout():
     players    = get_players_with_predictions()
     latest_gw  = get_latest_gw()
     predict_gw = latest_gw + 1
+
+    if players.empty:
+        return warming_up_alert("Home dashboard")
 
     n_total  = len(players)
     n_avail  = len(get_available_players())
