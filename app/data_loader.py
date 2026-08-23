@@ -248,3 +248,89 @@ def get_available_players() -> pd.DataFrame:
     if avail["position"].value_counts().get("GKP", 0) < 2:
         return pool
     return avail
+
+
+# ── Season-long calibration (predicted vs actual, all saved snapshots) ──────
+
+def _season_dirs() -> dict[str, dict[str, Path]]:
+    """
+    Map a season key to its {predictions, raw} directories: "current" for
+    the live season, plus one entry per archived season (most recent
+    first), e.g. "2025-26" -> data/archive/2025-26/{predictions,raw}.
+    """
+    dirs: dict[str, dict[str, Path]] = {"current": {"predictions": PREDICTIONS, "raw": RAW}}
+    archive_root = ROOT / "data" / "archive"
+    if archive_root.exists():
+        for d in sorted((p for p in archive_root.iterdir() if p.is_dir()), reverse=True):
+            dirs[d.name] = {"predictions": d / "predictions", "raw": d / "raw"}
+    return dirs
+
+
+@lru_cache(maxsize=None)
+def get_season_calibration(season_key: str) -> pd.DataFrame:
+    """
+    One row per (predict_gw, player_id) who featured that GW, across every
+    saved prediction snapshot for `season_key` ("current", or an archive
+    label like "2025-26"). Columns: predict_gw, player_id, web_name,
+    position, predicted_pts, actual_pts, diff. Empty DataFrame if the
+    season key is unknown or has no usable snapshots yet.
+
+    Archived seasons are immutable once written, so this is safe to cache
+    per season_key for the life of the process; "current" reflects
+    whatever's in data/predictions/ at first call (consistent with every
+    other cached loader in this module, which is a startup-time snapshot).
+    """
+    dirs = _season_dirs()
+    if season_key not in dirs:
+        return pd.DataFrame()
+
+    pred_dir = dirs[season_key]["predictions"]
+    gw_path  = dirs[season_key]["raw"] / "fpl_gameweeks.parquet"
+    if not pred_dir.exists() or not gw_path.exists():
+        return pd.DataFrame()
+
+    actuals = pd.read_parquet(gw_path)
+    if not {"player_id", "round", "total_points", "minutes"}.issubset(actuals.columns):
+        return pd.DataFrame()
+    actuals = actuals[["player_id", "round", "total_points", "minutes"]]
+
+    rows = []
+    for f in sorted(pred_dir.glob("gw*.parquet")):
+        try:
+            predict_gw = int(f.stem.replace("gw", ""))
+        except ValueError:
+            continue
+        snap = pd.read_parquet(f)
+        if not {"player_id", "predicted_pts"}.issubset(snap.columns):
+            continue
+        cols = ["player_id", "predicted_pts"]
+        for c in ["web_name", "position"]:
+            if c in snap.columns:
+                cols.append(c)
+        snap = snap[cols].drop_duplicates(subset=["player_id"], keep="last").copy()
+        snap["predict_gw"] = predict_gw
+
+        act = actuals[(actuals["round"] == predict_gw) & (actuals["minutes"] > 0)]
+        merged = snap.merge(act[["player_id", "total_points"]], on="player_id", how="inner")
+        if merged.empty:
+            continue
+        merged = merged.rename(columns={"total_points": "actual_pts"})
+        merged["diff"] = merged["actual_pts"] - merged["predicted_pts"]
+        rows.append(merged)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.concat(rows, ignore_index=True)
+
+
+def get_calibration_season_options() -> list[dict[str, str]]:
+    """
+    Season keys with at least one usable prediction snapshot, most recent
+    first, as [{"label": ..., "value": ...}] ready for a dbc.Select.
+    """
+    options = []
+    for key in _season_dirs():
+        if not get_season_calibration(key).empty:
+            label = "Current season" if key == "current" else f"{key} (archived)"
+            options.append({"label": label, "value": key})
+    return options
