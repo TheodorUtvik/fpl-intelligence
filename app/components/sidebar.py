@@ -11,7 +11,6 @@ NAV_ROUTES = {
     "nav-home":      ("/",          "Overview"),
     "nav-top50":     ("/top50",     "Top 50"),
     "nav-optimizer": ("/optimizer", "Optimizer"),
-    "nav-transfers": ("/transfers", "Transfers"),
     "nav-results":   ("/results",   "GW Results"),
 }
 
@@ -20,7 +19,7 @@ BREADCRUMBS = {
     "/":           ("Analysis",  "Overview"),
     "/top50":      ("Analysis",  "Top 50"),
     "/optimizer":  ("Actions",   "Optimizer"),
-    "/transfers":  ("Actions",   "Transfers"),
+    "/my-team":    ("Actions",   "My Team"),
     "/results":    ("History",   "GW Results"),
 }
 
@@ -50,7 +49,7 @@ def build_sidebar() -> html.Div:
         html.Div("Actions", className="sidebar-section"),
         html.Nav([
             html.A("Optimizer", href="/optimizer", className="nav-item", id="nav-optimizer"),
-            html.A("Transfers", href="/transfers", className="nav-item", id="nav-transfers"),
+            html.A("My Team",   href="/my-team",   className="nav-item", id="nav-my-team"),
         ], className="sidebar-nav"),
 
         # ── History section ──────────────────────────────────

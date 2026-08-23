@@ -17,6 +17,9 @@ models/*.png
 # model weights, explainer and feature list ARE committed (Stage 2 rebuilds them)
 # models/*.json and models/*.pkl are intentionally NOT ignored
 
+# Local SQLite team state — personal data, never committed
+data/fpl.db
+
 # Jupyter checkpoints
 .ipynb_checkpoints/
 
