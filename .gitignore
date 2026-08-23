@@ -25,3 +25,8 @@ data/fpl.db
 
 # Environment
 .env
+
+# Test artefacts
+.pytest_cache/
+.coverage
+htmlcov/
