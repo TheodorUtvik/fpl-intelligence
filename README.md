@@ -1,5 +1,8 @@
 # FPL Intelligence
 
+[![CI](https://github.com/TheodorUtvik/fpl-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/TheodorUtvik/fpl-intelligence/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+
 An end-to-end data science application for Fantasy Premier League.
 
 Machine learning predicts player points using historical FPL and underlying stats (xG/xA from Understat). Those predictions feed into a Linear Programming optimizer that selects the best squad and recommends transfers under real FPL constraints. Results are surfaced through an interactive Dash dashboard.
@@ -98,6 +101,14 @@ Each notebook saves its outputs as parquet files consumed by the next. The model
 ```bash
 python -m app.app
 # Open http://127.0.0.1:8050
+```
+
+### Run the tests
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
 ```
 
 ---
