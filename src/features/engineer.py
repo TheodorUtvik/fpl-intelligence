@@ -201,7 +201,7 @@ class FeatureEngineer:
         fixture_lookup = pd.concat([home, away], ignore_index=True)
 
         # Opponent goals conceded rolling average
-        finished = fixtures[fixtures['finished'] == True].copy()
+        finished = fixtures[fixtures['finished']].copy()
         hc = finished[['event', 'team_h', 'team_a_score']].rename(
             columns={'event': 'round', 'team_h': 'team_id', 'team_a_score': 'gc'}
         )

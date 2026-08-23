@@ -19,7 +19,6 @@ import logging
 import pickle
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 # shap and xgboost are imported lazily inside methods — both are heavy
@@ -73,8 +72,8 @@ class FPLPredictor:
         -------
         self
         """
+        import shap  # noqa: PLC0415
         import xgboost as xgb  # noqa: PLC0415
-        import shap            # noqa: PLC0415
 
         self.feature_cols = self._load_feature_cols()
 
@@ -142,7 +141,6 @@ class FPLPredictor:
             SHAP Explanation object. Use shap.plots.waterfall(result[0])
             or shap.plots.beeswarm(result) to visualise.
         """
-        import shap  # noqa: PLC0415
         self._check_loaded()
         X = features_df[self.feature_cols]
         return self.explainer(X)

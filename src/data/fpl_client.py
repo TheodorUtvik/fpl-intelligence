@@ -16,13 +16,13 @@ Usage
     fixtures_df = client.get_fixtures()
 """
 
-import time
 import logging
+import time
 from typing import Optional
 
+import pandas as pd
 import requests
 from requests.exceptions import RequestException
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 

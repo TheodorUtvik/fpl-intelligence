@@ -3,16 +3,15 @@ Home page — overview dashboard.
 """
 
 import dash
-import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import dcc, html
 
+from app.components.warming_up import warming_up_alert
 from app.data_loader import (
     get_available_players,
     get_latest_gw,
     get_players_with_predictions,
 )
-from app.components.warming_up import warming_up_alert
 
 dash.register_page(__name__, path="/", name="Home")
 
@@ -168,8 +167,8 @@ def layout():
                 ),
                 html.H1("The model has opinions this week.", className="page-title serif"),
                 html.P(
-                    f"XGBoost predictions for every eligible player, filtered through a PuLP ILP "
-                    f"that finds the optimal squad under FPL's £100m budget and 3-per-club cap.",
+                    "XGBoost predictions for every eligible player, filtered through a PuLP ILP "
+                    "that finds the optimal squad under FPL's £100m budget and 3-per-club cap.",
                     className="page-desc",
                 ),
             ]),

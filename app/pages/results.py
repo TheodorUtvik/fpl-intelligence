@@ -4,24 +4,25 @@ Shows predicted vs actual points for the current GW and the previous 3,
 so you can track how well the model performed week by week.
 """
 
+import sys
+from pathlib import Path
+
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import html
-from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from app.components.club_badge import render_club_badge
+from app.components.warming_up import warming_up_alert
 from app.data_loader import (
     get_latest_gw,
     get_predictor,
     load_features,
     load_teams,
 )
-from app.components.club_badge import render_club_badge
-from app.components.warming_up import warming_up_alert
 
 dash.register_page(__name__, path="/results", name="GW Results")
 

@@ -7,8 +7,8 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html  # dcc kept for dcc.Loading
 
-from app.data_loader import get_available_players, get_latest_gw, get_optimizer
 from app.components.club_badge import render_club_badge
+from app.data_loader import get_available_players, get_latest_gw, get_optimizer
 
 dash.register_page(__name__, path="/optimizer", name="Optimizer")
 

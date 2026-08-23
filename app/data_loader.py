@@ -17,8 +17,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.models.predict import FPLPredictor  # noqa: E402
 from src.models.optimize import FPLOptimizer  # noqa: E402
+from src.models.predict import FPLPredictor  # noqa: E402
 from src.utils import completeness_threshold  # noqa: E402
 
 PROCESSED   = ROOT / "data" / "processed"

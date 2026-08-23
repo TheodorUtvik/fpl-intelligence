@@ -19,7 +19,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.refresh_pipeline import merge_data, engineer_and_train
+from scripts.refresh_pipeline import engineer_and_train, merge_data
 
 logging.basicConfig(
     level=logging.INFO,

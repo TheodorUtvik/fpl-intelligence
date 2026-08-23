@@ -6,8 +6,8 @@ generate replacement suggestions.
 """
 from __future__ import annotations
 
-import requests
 import pandas as pd
+import requests
 
 from app.db import get_conn, get_default_user_id
 
@@ -143,8 +143,9 @@ def get_replacement_suggestions(
     No budget cap — callers can see any player regardless of cost.
     When free_transfers < 1 the -4pt hit is factored into pts_delta and sort order.
     """
-    from app.data_loader import get_players_with_predictions
     from collections import Counter
+
+    from app.data_loader import get_players_with_predictions
 
     all_players = get_players_with_predictions()
 

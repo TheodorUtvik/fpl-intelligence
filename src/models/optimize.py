@@ -27,11 +27,7 @@ from itertools import combinations
 from typing import Optional
 
 import pandas as pd
-import numpy as np
-from pulp import (
-    LpProblem, LpMaximize, LpVariable, LpBinary,
-    lpSum, value, PULP_CBC_CMD
-)
+from pulp import PULP_CBC_CMD, LpBinary, LpMaximize, LpProblem, LpVariable, lpSum, value
 
 logger = logging.getLogger(__name__)
 

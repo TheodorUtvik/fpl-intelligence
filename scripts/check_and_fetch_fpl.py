@@ -56,7 +56,7 @@ def save_state(state: dict) -> None:
 
 def get_finished_gw(events) -> int | None:
     """Return the most recently finished GW number, or None if none finished yet."""
-    finished = events[events["finished"] == True]
+    finished = events[events["finished"]]
     if finished.empty:
         return None
     return int(finished["id"].max())

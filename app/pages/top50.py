@@ -7,13 +7,13 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, callback, html
 
+from app.components.club_badge import render_club_badge
 from app.data_loader import (
     get_latest_gw,
     get_players_with_predictions,
     get_prediction_history_gws,
     load_predictions_for_gw,
 )
-from app.components.club_badge import render_club_badge
 
 dash.register_page(__name__, path="/top50", name="Top 50")
 

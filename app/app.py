@@ -1,6 +1,6 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, clientside_callback, dcc, html
+from dash import Input, Output, dcc, html
 
 from app.components.sidebar import BREADCRUMBS, build_sidebar
 from app.db import init_db

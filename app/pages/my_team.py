@@ -65,8 +65,10 @@ def _build_pitch(starters: list[dict]) -> html.Div:
             disp   = name if len(name) <= 11 else name[:10] + "."
 
             jersey_cls = "player-jersey"
-            if is_cap:  jersey_cls += " captain"
-            elif is_vc: jersey_cls += " vice"
+            if is_cap:
+                jersey_cls += " captain"
+            elif is_vc:
+                jersey_cls += " vice"
 
             token_cls = "pitch-player enter mt-player"
             if status in ("i", "d", "s"):
@@ -790,7 +792,7 @@ def apply_swap(n_clicks_list, selected_id, refresh_count):
         return dash.no_update
 
     target_pid = tid["index"]
-    from app.team_manager import load_team, swap_positions, reassign_captaincy
+    from app.team_manager import load_team, reassign_captaincy, swap_positions
     team = load_team()
     if not team:
         return dash.no_update
@@ -1082,8 +1084,8 @@ def toggle_xfer_panel(n_clicks, is_open):
 def render_xfer_rec(is_open):
     if not is_open:
         return None
-    from app.team_manager import load_team
     from app.data_loader import get_optimizer
+    from app.team_manager import load_team
     team = load_team()
     if not team:
         return html.Div("No team loaded.", style={"padding": "16px", "color": INK_3})

@@ -23,7 +23,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -109,16 +109,14 @@ def main() -> None:
 
     # Import pipeline functions inline to keep startup fast on skip paths
     import asyncio
+
     import pandas as pd
+
     from src.data.understat_client import UnderstatClient
-    from src.features.engineer import FeatureEngineer
-    from src.models.predict import FPLPredictor
     from src.utils import understat_ready_for_gw
 
-    PROCESSED   = ROOT / "data" / "processed"
-    PREDICTIONS = ROOT / "data" / "predictions"
-    RAW         = ROOT / "data" / "raw"
-    MODELS      = ROOT / "models"
+    PROCESSED = ROOT / "data" / "processed"
+    RAW       = ROOT / "data" / "raw"
 
     # Load existing id_map
     id_map_path = PROCESSED / "player_id_map.parquet"
