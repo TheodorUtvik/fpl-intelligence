@@ -4,44 +4,16 @@ Items deferred from active development. Kept here so nothing gets lost.
 
 ---
 
-## Automation: xG coverage-based Understat trigger (alternative to 48h delay)
+## ✅ Done: xG coverage-based Understat trigger (alternative to 48h delay)
 
-Currently Stage 2 of the pipeline (full refresh) uses a fixed 48-hour delay after
-the FPL `finished` flag. A smarter alternative would be to check Understat match
-count directly instead of waiting blindly.
-
-**Why it was deferred:**
-xG coverage (derived metric) is not a reliable signal because:
-- ~300 FPL players have no Understat mapping → theoretical max coverage ~65-70%
-- Goalkeepers structurally have xG=0
-- Coverage varies week to week for reasons unrelated to Understat update lag
-
-**Proposed implementation when revisited:**
-Instead of checking xG coverage %, check the raw Understat match row count
-for the current GW date window:
-
-```python
-from datetime import datetime, timedelta
-
-GW_MATCH_THRESHOLD = 200  # ~10 teams × 20 players
-
-def understat_is_ready(us_matches: pd.DataFrame, gw_start: datetime) -> bool:
-    """
-    Returns True if Understat has enough match rows for the current GW.
-    Uses match count rather than derived xG coverage to avoid structural
-    coverage gaps from unmapped players and GKPs.
-    """
-    recent = us_matches[us_matches["date"] >= gw_start]
-    return len(recent) >= GW_MATCH_THRESHOLD
-```
-
-Retry logic in Stage 2 workflow:
-- Check match count after Understat fetch
-- If below threshold: write a `data/.understat_retry_gw{N}` flag file, exit
-- Next day's cron picks up the flag and retries
-- After 5 retries (5 days), proceed anyway — prevents pipeline getting permanently stuck
-
-**Risk:** If Understat changes their data format or delays increase, threshold may need tuning.
+Implemented as `src/utils.understat_ready_for_gw()`, used by
+`scripts/check_and_run_full_pipeline.py`. Checks raw Understat match row
+count (scaled to the GW's actual fixture count, so blank/double GWs don't
+need a special case) rather than xG coverage. The 48h delay is now a
+floor, not the whole gate — readiness is checked after it, with a 96h
+hard deadline that proceeds anyway rather than stalling forever. Retry
+is free: if not ready, `full_pipeline_gw` just doesn't advance, so the
+next scheduled run retries automatically with no extra flag file needed.
 
 ---
 

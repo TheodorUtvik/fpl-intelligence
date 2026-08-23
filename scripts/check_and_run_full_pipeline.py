@@ -4,9 +4,16 @@ Stage 2 — Full pipeline (Understat + merge + features + retrain).
 
 Runs only when:
   1. Stage 1 has fetched a GW that Stage 2 hasn't processed yet.
-  2. At least 48 hours have elapsed since Stage 1 ran (Understat update lag).
+  2. At least 48 hours have elapsed since Stage 1 ran (Understat update lag
+     floor — it's never even checked before this).
+  3. Understat's match data for this GW looks complete by row count (not
+     derived xG coverage, which is structurally capped below 100%), OR
+     96 hours have elapsed, at which point it proceeds anyway rather than
+     stall indefinitely.
 
-Exits cleanly with no changes if conditions are not met.
+Exits cleanly with no changes if conditions are not met — including a
+"not ready yet" outcome from check 3, which retries automatically on the
+next scheduled run without needing any extra retry-tracking state.
 
 Usage:
     python scripts/check_and_run_full_pipeline.py
@@ -30,7 +37,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 STATE_FILE   = ROOT / "data" / "pipeline_state.json"
-UNDERSTAT_DELAY_HOURS = 48
+UNDERSTAT_MIN_DELAY_HOURS = 48   # never check readiness before this — Understat needs some lag regardless
+UNDERSTAT_MAX_DELAY_HOURS = 96   # hard fallback — proceed even if not "ready" rather than stall forever
 
 
 def set_gha_output(key: str, value: str) -> None:
@@ -78,16 +86,18 @@ def main() -> None:
 
     fetched_at = datetime.fromisoformat(fetched_at_str)
     elapsed    = datetime.now(timezone.utc) - fetched_at
-    remaining  = timedelta(hours=UNDERSTAT_DELAY_HOURS) - elapsed
+    remaining  = timedelta(hours=UNDERSTAT_MIN_DELAY_HOURS) - elapsed
 
-    if elapsed < timedelta(hours=UNDERSTAT_DELAY_HOURS):
+    if elapsed < timedelta(hours=UNDERSTAT_MIN_DELAY_HOURS):
         log.info(
             f"Only {elapsed.total_seconds()/3600:.1f}h elapsed since FPL fetch. "
-            f"Waiting for {UNDERSTAT_DELAY_HOURS}h Understat delay "
+            f"Waiting for the {UNDERSTAT_MIN_DELAY_HOURS}h minimum Understat delay "
             f"({remaining.total_seconds()/3600:.1f}h remaining). Nothing to do."
         )
         set_gha_output("ran", "false")
         sys.exit(0)
+
+    past_hard_deadline = elapsed >= timedelta(hours=UNDERSTAT_MAX_DELAY_HOURS)
 
     season = state.get("season")
     if not season:
@@ -103,6 +113,7 @@ def main() -> None:
     from src.data.understat_client import UnderstatClient
     from src.features.engineer import FeatureEngineer
     from src.models.predict import FPLPredictor
+    from src.utils import understat_ready_for_gw
 
     PROCESSED   = ROOT / "data" / "processed"
     PREDICTIONS = ROOT / "data" / "predictions"
@@ -112,9 +123,10 @@ def main() -> None:
     # Load existing id_map
     id_map_path = PROCESSED / "player_id_map.parquet"
     if not id_map_path.exists():
-        log.error("player_id_map.parquet not found. Run notebook 02 first.")
+        log.error("player_id_map.parquet not found. Run scripts/build_id_map.py first.")
         sys.exit(1)
-    id_map = pd.read_parquet(id_map_path)
+    id_map   = pd.read_parquet(id_map_path)
+    fixtures = pd.read_parquet(RAW / "fpl_fixtures.parquet")
 
     # ── Understat fetch ───────────────────────────────────────────────────────
     log.info("=== Fetching Understat data ===")
@@ -129,9 +141,33 @@ def main() -> None:
         return us_players, us_matches
 
     us_players, us_matches = asyncio.run(_fetch())
+    log.info(f"  Understat fetched: {len(us_matches)} match rows.")
+
+    # ── Readiness check ─────────────────────────────────────────────────────
+    # The 48h minimum delay is a floor, not a guarantee — Understat's own
+    # update lag varies. Check the actual match count for this GW before
+    # committing to a full retrain; if it's short, skip without advancing
+    # full_pipeline_gw so tomorrow's run retries automatically. Past the
+    # 96h hard deadline, proceed anyway rather than stall indefinitely.
+    ready = understat_ready_for_gw(us_matches, fixtures, fpl_gw)
+    if not ready and not past_hard_deadline:
+        log.info(
+            f"Understat doesn't look complete for GW{fpl_gw} yet "
+            f"({elapsed.total_seconds()/3600:.1f}h since FPL fetch, "
+            f"{UNDERSTAT_MAX_DELAY_HOURS}h hard deadline). Retrying tomorrow."
+        )
+        set_gha_output("ran", "false")
+        sys.exit(0)
+    if not ready:
+        log.warning(
+            f"Understat still incomplete for GW{fpl_gw} after "
+            f"{elapsed.total_seconds()/3600:.1f}h — past the {UNDERSTAT_MAX_DELAY_HOURS}h "
+            f"hard deadline, proceeding anyway with partial xG/xA data."
+        )
+
     us_players.to_parquet(RAW / "understat_players.parquet", index=False)
     us_matches.to_parquet(RAW / "understat_matches.parquet", index=False)
-    log.info(f"  Understat saved: {len(us_matches)} match rows.")
+    log.info("  Understat data saved.")
 
     # ── Merge ─────────────────────────────────────────────────────────────────
     log.info("=== Merging FPL + Understat ===")
@@ -140,7 +176,6 @@ def main() -> None:
     players_df = pd.read_parquet(RAW / "fpl_players.parquet")
     teams_df   = pd.read_parquet(RAW / "fpl_teams.parquet")
     gw_df      = pd.read_parquet(RAW / "fpl_gameweeks.parquet")
-    fixtures   = pd.read_parquet(RAW / "fpl_fixtures.parquet")
 
     merged = merge_data(players_df, teams_df, gw_df, id_map, us_matches)
     merged.to_parquet(PROCESSED / "merged_players.parquet", index=False)

@@ -113,10 +113,24 @@ class UnderstatClient:
     # ------------------------------------------------------------------
 
     async def _post(self, path: str, data: Optional[dict] = None) -> dict:
+        """POST with retry logic (up to 3 attempts, exponential backoff: 1s, 2s)."""
         url = f"{BASE_URL}/{path}"
-        async with self._session.post(url, data=data) as resp:
-            resp.raise_for_status()
-            return await resp.json(content_type=None)
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                async with self._session.post(url, data=data) as resp:
+                    resp.raise_for_status()
+                    return await resp.json(content_type=None)
+            except aiohttp.ClientError:
+                if attempt == max_retries - 1:
+                    raise
+                wait_time = 2 ** attempt
+                logger.warning(
+                    f"Request to {path} failed, retrying in {wait_time}s... "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(wait_time)
 
     # ------------------------------------------------------------------
     # Public methods

@@ -48,6 +48,34 @@ def season_label(start_year: str) -> str:
     return f"{y}-{str(y + 1)[2:]}"
 
 
+def understat_ready_for_gw(
+    us_matches: pd.DataFrame,
+    fixtures: pd.DataFrame,
+    gw: int,
+    min_rows_per_fixture: int = 20,
+) -> bool:
+    """
+    Return True once Understat has enough match rows for gameweek `gw` to
+    be considered complete.
+
+    Uses the raw match row count rather than derived xG coverage — xG
+    coverage is structurally capped well below 100% (unmapped players,
+    goalkeepers always at xG=0) so it can't reliably signal "Understat has
+    caught up", only "some rows exist". The threshold scales with the
+    actual fixture count for the GW so blank/double gameweeks don't need
+    a special case.
+    """
+    gw_fixtures = fixtures[fixtures["event"] == gw]
+    if gw_fixtures.empty:
+        return True  # blank gameweek for this event — nothing to wait for
+
+    threshold = len(gw_fixtures) * min_rows_per_fixture
+    gw_start  = pd.to_datetime(gw_fixtures["kickoff_time"], utc=True).min()
+    match_dates = pd.to_datetime(us_matches["date"], utc=True, errors="coerce")
+    recent = us_matches[match_dates >= gw_start]
+    return len(recent) >= threshold
+
+
 def completeness_threshold(counts: pd.Series, frac: float = 0.85, floor: int = 100) -> int:
     """
     Minimum per-round row count for a gameweek to be considered "complete"
