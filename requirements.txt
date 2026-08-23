@@ -1,27 +1,27 @@
 # Data collection
-requests
-aiohttp>=3.9.0
-rapidfuzz
+requests==2.34.2
+aiohttp==3.14.3
+rapidfuzz==3.14.5
 
 # Data processing
-pandas
-numpy
-pyarrow
+pandas==3.0.5
+numpy==2.5.2
+pyarrow==25.0.1
 
 # Machine learning
-xgboost
-scikit-learn
-shap
-optuna
+xgboost==3.4.1
+scikit-learn==1.9.0
+shap==0.52.0
+optuna==4.9.0
 
 # Optimisation
-pulp
+pulp==3.3.2
 
 # Visualisation & dashboard
-dash
-dash-bootstrap-components
-plotly
-mplsoccer
+dash==4.4.1
+dash-bootstrap-components==2.0.4
+plotly==6.9.0
+mplsoccer==1.8.0
 
 # Deployment
-gunicorn
+gunicorn==26.1.0
