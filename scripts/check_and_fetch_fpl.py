@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.data.fpl_client import FPLClient
+from src.utils import archive_season, current_season_start_year, season_label
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,32 +44,64 @@ def set_gha_output(key: str, value: str) -> None:
 
 def load_state() -> dict:
     if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return {"fpl_fetched_gw": 0, "fpl_fetched_at": None, "full_pipeline_gw": 0}
+        state = json.loads(STATE_FILE.read_text())
+        state.setdefault("season", None)
+        return state
+    return {"season": None, "fpl_fetched_gw": 0, "fpl_fetched_at": None, "full_pipeline_gw": 0}
 
 
 def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
-def get_finished_gw(client: FPLClient) -> int | None:
+def get_finished_gw(events) -> int | None:
     """Return the most recently finished GW number, or None if none finished yet."""
-    events = client.get_events()
     finished = events[events["finished"] == True]
     if finished.empty:
         return None
     return int(finished["id"].max())
 
 
+def check_season_rollover(state: dict, events) -> tuple[dict, bool]:
+    """
+    Detect a season change (or first-run migration of an un-seasoned state
+    file) and archive the previous season's data before resetting counters.
+    Returns (possibly updated state, whether a rollover was performed).
+
+    The caller must commit on a rollover even if no GW has finished yet
+    this run — otherwise the archived files and reset state only exist on
+    the CI runner's disk and are discarded when it's torn down.
+    """
+    new_season = current_season_start_year(events)
+    if state.get("season") == new_season:
+        return state, False
+
+    old_label = season_label(state["season"]) if state.get("season") else "2025-26"
+    log.info(
+        f"Season change detected: {state.get('season')!r} -> {new_season!r} "
+        f"({season_label(new_season)}). Archiving {old_label}..."
+    )
+    archive_season(ROOT, old_label)
+
+    state = {"season": new_season, "fpl_fetched_gw": 0, "fpl_fetched_at": None, "full_pipeline_gw": 0}
+    save_state(state)
+    log.info(f"pipeline_state.json reset for season {season_label(new_season)}.")
+    return state, True
+
+
 def main() -> None:
     log.info("=== Stage 1: FPL completeness check ===")
 
-    state = load_state()
-    log.info(f"State: fpl_fetched_gw={state['fpl_fetched_gw']}, "
+    state  = load_state()
+    client = FPLClient(request_delay=0.05)
+    events = client.get_events()
+
+    state, rolled_over = check_season_rollover(state, events)
+    set_gha_output("rollover", "true" if rolled_over else "false")
+    log.info(f"State: season={state['season']}, fpl_fetched_gw={state['fpl_fetched_gw']}, "
              f"full_pipeline_gw={state['full_pipeline_gw']}")
 
-    client     = FPLClient(request_delay=0.05)
-    finished_gw = get_finished_gw(client)
+    finished_gw = get_finished_gw(events)
 
     if finished_gw is None:
         log.info("No finished GW found. Nothing to do.")

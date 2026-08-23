@@ -31,10 +31,12 @@ jobs:
         run: python scripts/check_and_fetch_fpl.py
 
       - name: Commit updated FPL data and state
-        if: steps.fetch.outputs.fetched == 'true'
+        if: steps.fetch.outputs.fetched == 'true' || steps.fetch.outputs.rollover == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: Stage 1 — FPL data refresh [skip ci]"
-          file_pattern: "data/raw data/pipeline_state.json"
+          commit_message: >-
+            ${{ steps.fetch.outputs.rollover == 'true' && 'chore: season rollover — archive previous season [skip ci]'
+                || 'chore: Stage 1 — FPL data refresh [skip ci]' }}
+          file_pattern: "data/raw data/processed data/predictions data/archive models data/pipeline_state.json"
           commit_user_name: "fpl-intelligence-bot"
           commit_user_email: "bot@fpl-intelligence"
