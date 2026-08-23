@@ -14,12 +14,16 @@ Usage
     import asyncio
     from src.data.understat_client import UnderstatClient
 
-    async def main():
+    # `season` is the season's start year (e.g. "2026" for 2026/27) — derive
+    # it with src.utils.current_season_start_year() rather than hardcoding it.
+    async def main(season: str):
         async with UnderstatClient() as client:
-            players_df = await client.get_league_players(season="2025")
-            matches_df = await client.get_all_player_matches(players_df["id"].tolist())
+            players_df = await client.get_league_players(season=season)
+            matches_df = await client.get_all_player_matches(
+                players_df["id"].tolist(), season_filter=season
+            )
 
-    asyncio.run(main())
+    asyncio.run(main("2026"))
 """
 
 import asyncio
@@ -118,7 +122,7 @@ class UnderstatClient:
     # Public methods
     # ------------------------------------------------------------------
 
-    async def get_league_players(self, season: str = "2025") -> pd.DataFrame:
+    async def get_league_players(self, season: str) -> pd.DataFrame:
         """
         Return season totals for all EPL players.
 
@@ -152,9 +156,9 @@ class UnderstatClient:
 
     async def get_player_matches(self, understat_id: int | str) -> pd.DataFrame:
         """
-        Return match-by-match stats for a single player.
-
-        Filters to the 2025 season by default so we match the FPL data window.
+        Return match-by-match stats for a single player, across all seasons
+        Understat has data for. Callers typically filter to one season via
+        `get_all_player_matches`'s `season_filter` parameter.
 
         Parameters
         ----------
@@ -189,7 +193,7 @@ class UnderstatClient:
     async def get_all_player_matches(
         self,
         understat_ids: list,
-        season_filter: str = "2025",
+        season_filter: str,
         log_every: int = 50,
     ) -> pd.DataFrame:
         """

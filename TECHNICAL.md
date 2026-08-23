@@ -39,7 +39,7 @@ The POST API was reverse-engineered by inspecting the `player.min.js` bundle, wh
 
 | Endpoint | Method | Parameters |
 |---|---|---|
-| `/main/getPlayersStats/` | POST | `league=EPL&season=2025` |
+| `/main/getPlayersStats/` | POST | `league=EPL&season=YYYY` (season start year, derived via `src/utils.current_season_start_year()`) |
 | `/main/getPlayerMatches/{id}` | POST | (no body required) |
 
 The async client (`src/data/understat_client.py`) uses `aiohttp` with `asyncio.Semaphore(10)` for concurrency control and SSL certificates from `certifi` (required on macOS Python 3.12 which does not trust system certificates for aiohttp connections).

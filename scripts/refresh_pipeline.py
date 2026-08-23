@@ -36,6 +36,7 @@ from src.data.fpl_client import FPLClient
 from src.data.understat_client import UnderstatClient
 from src.features.engineer import FeatureEngineer
 from src.models.predict import FPLPredictor
+from src.utils import completeness_threshold, current_season_start_year
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,11 +53,12 @@ MODELS       = ROOT / "models"
 
 # ── Step 1: FPL ──────────────────────────────────────────────────────────────
 
-def fetch_fpl() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def fetch_fpl() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, str]:
     """Fetch players, teams, fixtures and full GW history from the FPL API."""
     log.info("=== Step 1: Fetching FPL data ===")
     client = FPLClient(request_delay=0.05)
 
+    season   = current_season_start_year(client.get_events())
     players  = client.get_players()
     teams    = client.get_teams()
     fixtures = client.get_fixtures()
@@ -66,31 +68,32 @@ def fetch_fpl() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
     gw_df = client.get_all_gameweeks(player_ids)
 
     latest_gw = int(gw_df["round"].max()) if not gw_df.empty else "?"
-    log.info(f"  Done — {len(players)} players, {len(gw_df)} GW rows, latest GW: {latest_gw}")
-    return players, teams, fixtures, gw_df
+    log.info(f"  Done — {len(players)} players, {len(gw_df)} GW rows, latest GW: {latest_gw}, season: {season}")
+    return players, teams, fixtures, gw_df, season
 
 
 # ── Step 2: Understat ────────────────────────────────────────────────────────
 
 async def _fetch_understat_async(
     understat_ids: list,
+    season: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     async with UnderstatClient(concurrency=10, request_delay=0.1) as client:
-        season_players = await client.get_league_players(season="2025")
+        season_players = await client.get_league_players(season=season)
         matches = await client.get_all_player_matches(
-            understat_ids, season_filter="2025"
+            understat_ids, season_filter=season
         )
     return season_players, matches
 
 
-def fetch_understat(id_map: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fetch_understat(id_map: pd.DataFrame, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Re-fetch Understat match data for all confirmed players in id_map."""
     log.info("=== Step 2: Fetching Understat data ===")
     confirmed = id_map[id_map["match_status"].isin(["auto", "manual", "review"])]
     understat_ids = confirmed["understat_id"].dropna().astype(str).tolist()
-    log.info(f"  {len(understat_ids)} mapped players to fetch...")
+    log.info(f"  {len(understat_ids)} mapped players to fetch (season {season})...")
 
-    season_players, matches = asyncio.run(_fetch_understat_async(understat_ids))
+    season_players, matches = asyncio.run(_fetch_understat_async(understat_ids, season))
     log.info(f"  Season players: {len(season_players)}, Match rows: {len(matches)}")
     return season_players, matches
 
@@ -183,11 +186,12 @@ def engineer_and_train(merged_df: pd.DataFrame, fixtures_df: pd.DataFrame) -> No
     PROCESSED.mkdir(parents=True, exist_ok=True)
     features.to_parquet(PROCESSED / "features.parquet", index=False)
 
-    # Determine the latest *complete* GW (same threshold as the app)
-    counts   = features.groupby("round").size()
-    complete = counts[counts >= 650].index
+    # Determine the latest *complete* GW (same dynamic threshold as the app)
+    counts    = features.groupby("round").size()
+    threshold = completeness_threshold(counts)
+    complete  = counts[counts >= threshold].index
     if complete.empty:
-        log.warning("No complete GW found (threshold 650). Skipping prediction snapshot.")
+        log.warning(f"No complete GW found (threshold {threshold}). Skipping prediction snapshot.")
         return
     latest_gw   = int(complete.max())
     predict_gw  = latest_gw + 1
@@ -241,7 +245,7 @@ def main() -> None:
              f"({id_map['match_status'].value_counts().to_dict()})")
 
     # Step 1 — FPL
-    players, teams, fixtures, gw_df = fetch_fpl()
+    players, teams, fixtures, gw_df, season = fetch_fpl()
     RAW.mkdir(parents=True, exist_ok=True)
     players.to_parquet(RAW / "fpl_players.parquet", index=False)
     teams.to_parquet(RAW / "fpl_teams.parquet", index=False)
@@ -250,7 +254,7 @@ def main() -> None:
     log.info("  FPL data saved to data/raw/")
 
     # Step 2 — Understat
-    us_players, us_matches = fetch_understat(id_map)
+    us_players, us_matches = fetch_understat(id_map, season)
     us_players.to_parquet(RAW / "understat_players.parquet", index=False)
     us_matches.to_parquet(RAW / "understat_matches.parquet", index=False)
     log.info("  Understat data saved to data/raw/")

@@ -43,8 +43,10 @@ def set_gha_output(key: str, value: str) -> None:
 
 def load_state() -> dict:
     if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return {"fpl_fetched_gw": 0, "fpl_fetched_at": None, "full_pipeline_gw": 0}
+        state = json.loads(STATE_FILE.read_text())
+        state.setdefault("season", None)
+        return state
+    return {"season": None, "fpl_fetched_gw": 0, "fpl_fetched_at": None, "full_pipeline_gw": 0}
 
 
 def save_state(state: dict) -> None:
@@ -87,7 +89,13 @@ def main() -> None:
         set_gha_output("ran", "false")
         sys.exit(0)
 
-    log.info(f"Both gates passed. Running full pipeline for GW{fpl_gw}...")
+    season = state.get("season")
+    if not season:
+        log.error("pipeline_state.json has no 'season' field. Run Stage 1 first.")
+        set_gha_output("ran", "false")
+        sys.exit(1)
+
+    log.info(f"Both gates passed. Running full pipeline for GW{fpl_gw} (season {season})...")
 
     # Import pipeline functions inline to keep startup fast on skip paths
     import asyncio
@@ -116,8 +124,8 @@ def main() -> None:
 
     async def _fetch():
         async with UnderstatClient(concurrency=10, request_delay=0.1) as client:
-            us_players = await client.get_league_players(season="2025")
-            us_matches = await client.get_all_player_matches(understat_ids, season_filter="2025")
+            us_players = await client.get_league_players(season=season)
+            us_matches = await client.get_all_player_matches(understat_ids, season_filter=season)
         return us_players, us_matches
 
     us_players, us_matches = asyncio.run(_fetch())
