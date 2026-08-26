@@ -105,8 +105,7 @@ def update_topbar(pathname):
             html.Div(
                 [
                     html.Div(
-                        [html.Span(className="pulse"),
-                         "season warming up" if warming_up else f"GW {latest_gw} data"],
+                        "season warming up" if warming_up else f"GW {latest_gw} data",
                         className="status-chip",
                     ),
                     html.Span("" if warming_up else f"predicting GW {predict_gw}"),

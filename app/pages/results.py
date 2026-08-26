@@ -178,7 +178,7 @@ def _tab_content(predict_from_gw: int, actual_gw: int) -> html.Div:
         ),
         html.Div([
             html.Div([
-                html.Div(f"GW {actual_gw} — predicted vs actual", className="card-title"),
+                html.Div(f"GW {actual_gw}: predicted vs actual", className="card-title"),
                 html.Span(f"model trained on GW {predict_from_gw}", className="tag"),
             ], className="card-hd"),
             html.Div(_results_table(df), className="card-body flush"),
@@ -205,7 +205,7 @@ def _calibration_kpis(df: pd.DataFrame) -> html.Div:
         ], className="kpi"),
         html.Div([
             html.Div("Correlation (r)", className="kpi-label"),
-            html.Div(f"{corr:.2f}" if corr == corr else "—", className="kpi-value mono"),
+            html.Div(f"{corr:.2f}" if corr == corr else "-", className="kpi-value mono"),
         ], className="kpi"),
         html.Div([
             html.Div("Gameweeks covered", className="kpi-label"),
@@ -320,7 +320,7 @@ def update_calibration(season_key):
         html.Div([
             html.Div([
                 html.Div("Biggest misses", className="card-title"),
-                html.Span("honest calibration — where the model was wrong, not just where it was right",
+                html.Span("honest calibration: where the model was wrong, not just where it was right",
                            className="tag"),
             ], className="card-hd"),
             html.Div(_worst_misses_table(df), className="card-body flush"),
@@ -349,7 +349,7 @@ def layout():
         recent_section = dbc.Tabs(tabs, active_tab=f"tab-{predict_gw}")
     else:
         recent_section = dbc.Alert(
-            "No current-season gameweeks yet — see season calibration below for prior seasons.",
+            "No current-season gameweeks yet. See season calibration below for prior seasons.",
             color="info",
         )
 
@@ -361,7 +361,7 @@ def layout():
                 html.Div("History · GW Results", className="page-eyebrow"),
                 html.H1("Model performance", className="page-title serif"),
                 html.P(
-                    "Predicted vs actual points — track how the XGBoost model performed "
+                    "Predicted vs actual points. Track how the XGBoost model performed "
                     "each week. Green diff = player outscored prediction.",
                     className="page-desc",
                 ),

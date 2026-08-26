@@ -43,7 +43,7 @@ def render_club_badge(team_code: str | None) -> html.Span:
     )
 
     children = [
-        html.Span(code or "—", className="club-badge-code"),
+        html.Span(code or "-", className="club-badge-code"),
         html.Span(logo_child, className="club-badge-slot"),
     ]
 

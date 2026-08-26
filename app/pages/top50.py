@@ -115,12 +115,12 @@ def update_table(selected_gw, pos_filter, sort_col):
         if df.empty:
             return (
                 dbc.Alert(
-                    "Predictions aren't ready yet — the model needs at least one "
+                    "Predictions aren't ready yet. The model needs at least one "
                     "completed current-season gameweek of data.",
                     color="info",
                 ),
                 "",
-                "—",
+                "-",
             )
         subtitle    = (
             f"Predicting GW {predict_gw}  ·  based on GW {latest_gw} data"
@@ -139,7 +139,7 @@ def update_table(selected_gw, pos_filter, sort_col):
             return (
                 dbc.Alert(f"No snapshot found for GW {selected_gw}.", color="warning"),
                 "",
-                "—",
+                "-",
             )
 
     if pos_filter != "ALL":
@@ -172,7 +172,7 @@ def update_table(selected_gw, pos_filter, sort_col):
                     style={"color": INK_3}),
             html.Td(f'{row["predicted_pts"]:.2f}', className="right mono",
                     style={"color": ACCENT, "fontWeight": 600}),
-            html.Td(f'{ppm:.2f}' if ppm == ppm and ppm is not None else "—",
+            html.Td(f'{ppm:.2f}' if ppm == ppm and ppm is not None else "-",
                     className="right mono"),
             html.Td(f'{form:.2f}', className="right mono"),
             html.Td(f'{xg:.2f}',  className="right mono"),

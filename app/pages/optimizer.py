@@ -206,7 +206,7 @@ def run_optimizer(n_clicks, squad_type):
     players   = get_available_players()
     if players.empty:
         return dbc.Alert(
-            "Predictions aren't ready yet — the model needs at least one "
+            "Predictions aren't ready yet. The model needs at least one "
             "completed current-season gameweek of data before the optimizer "
             "can run.",
             color="info",
@@ -223,7 +223,7 @@ def run_optimizer(n_clicks, squad_type):
         title_extra = ""
 
     if result["status"] != "Optimal":
-        return dbc.Alert("Optimisation failed — no feasible squad found.", color="danger")
+        return dbc.Alert("Optimisation failed. No feasible squad found.", color="danger")
 
     captain    = result["captain"]
     vice       = result["vice_captain"]

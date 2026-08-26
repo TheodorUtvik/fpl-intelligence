@@ -309,7 +309,7 @@ layout = html.Div(
                     html.Div("Actions · My Team", className="page-eyebrow"),
                     html.H1("My Team", className="page-title serif"),
                     html.P(
-                        "Click any player to see ranked replacements — budget, position, "
+                        "Click any player to see ranked replacements. Budget, position, "
                         "and 3-per-club rules applied. Nothing changes until you confirm.",
                         className="page-desc",
                     ),
@@ -319,7 +319,7 @@ layout = html.Div(
         ),
 
         dbc.Alert(
-            "Demo note: this page runs in single-user mode — there's one shared team, "
+            "Demo note: this page runs in single-user mode. There's one shared team, "
             "not a separate one per visitor. Importing a team here replaces whatever "
             "was there before.",
             color="secondary",
@@ -919,7 +919,7 @@ def import_team(n_clicks, team_id, free_transfers, refresh_count):
     gw = get_latest_gw()
     if gw == 0:
         return dash.no_update, dbc.Alert(
-            "Team import isn't available yet — it needs at least one "
+            "Team import isn't available yet. It needs at least one "
             "completed gameweek of current-season data. Check back after "
             "GW1 results are in.",
             color="info",

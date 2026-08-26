@@ -277,17 +277,6 @@ button { font-family: inherit; font-size: inherit; }
   font-size: 10.5px;
   color: var(--ink-2);
 }
-.status-chip .pulse {
-  width: 6px; height: 6px;
-  background: var(--accent);
-  border-radius: 999px;
-  animation: pulse 2s ease-out infinite;
-}
-@keyframes pulse {
-  0%   { box-shadow: 0 0 0 0 oklch(0.56 0.14 150 / 0.5); }
-  70%  { box-shadow: 0 0 0 8px oklch(0.56 0.14 150 / 0); }
-  100% { box-shadow: 0 0 0 0 oklch(0.56 0.14 150 / 0); }
-}
 
 /* ─── Page ─── */
 .page {
