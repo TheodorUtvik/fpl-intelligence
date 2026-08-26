@@ -318,6 +318,14 @@ layout = html.Div(
             className="page-head",
         ),
 
+        dbc.Alert(
+            "Demo note: this page runs in single-user mode — there's one shared team, "
+            "not a separate one per visitor. Importing a team here replaces whatever "
+            "was there before.",
+            color="secondary",
+            className="mb-3",
+        ),
+
         # KPI bar + re-import button
         html.Div(id="mt-kpi-bar"),
 
