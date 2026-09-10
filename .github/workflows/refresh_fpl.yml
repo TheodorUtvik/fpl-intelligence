@@ -37,6 +37,6 @@ jobs:
           commit_message: >-
             ${{ steps.fetch.outputs.rollover == 'true' && 'chore: season rollover — archive previous season [skip ci]'
                 || 'chore: Stage 1 — FPL data refresh [skip ci]' }}
-          file_pattern: "data/raw data/processed data/predictions data/archive models data/pipeline_state.json"
+          file_pattern: "."
           commit_user_name: "fpl-intelligence-bot"
           commit_user_email: "bot@fpl-intelligence"
