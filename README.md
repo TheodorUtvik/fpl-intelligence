@@ -93,7 +93,8 @@ fpl-intelligence/
 ├── scripts/
 │   ├── check_and_fetch_fpl.py         # Stage 1 — FPL fetch (CI, daily)
 │   ├── check_and_run_full_pipeline.py # Stage 2 — Understat + merge + retrain (CI, daily)
-│   ├── refresh_pipeline.py            # Manual full refresh (local)
+│   ├── refresh_pipeline.py            # Manual full refresh (local, hits both APIs)
+│   ├── rebuild_from_local_data.py     # Rebuild merge/features/model from data/raw/ only — no API calls
 │   └── build_id_map.py                # Rebuild the FPL<->Understat player ID map
 ├── app/
 │   ├── app.py                  # Dash app entry point (Flask server exposed for Gunicorn)
@@ -112,6 +113,7 @@ fpl-intelligence/
 ├── models/                      # Saved model artefacts (committed — CI rebuilds them)
 ├── .github/workflows/           # ci.yml, refresh_fpl.yml, refresh_full.yml
 ├── Procfile                     # Gunicorn entry point for Render
+├── render.yaml                  # Render Blueprint (web service, dev branch, gunicorn start command)
 ├── requirements.txt / requirements-dev.txt
 └── README.md
 ```
@@ -192,7 +194,7 @@ The ILP selects a squad satisfying:
 - [x] Phase 8 — My Team: real squad import, transfer suggestions, SQLite persistence
 - [x] Phase 9 — Automated CI pipeline with season-rollover handling and a test/lint quality gate
 - [ ] Phase 10 — Deployment (Render)
-- [ ] Phase 11 — Predicted-vs-actual accuracy tracker (GW Results page)
+- [x] Phase 11 — Predicted-vs-actual accuracy tracker (GW Results page)
 - [ ] Phase 12 — Backtesting
 
 ---
@@ -204,3 +206,4 @@ The ILP selects a squad satisfying:
 - Model does not account for opponent defensive strength split by home/away — planned feature.
 - Player availability probability (`chance_of_playing_next_round`) not yet used as a model feature, only as a status filter.
 - Budget slider on the optimizer not yet implemented (the ILP already supports a `budget` parameter).
+- **Single-user mode by design** — the SQLite schema (`app/db.py`) supports multiple users, but `DEFAULT_USER_ID` is hardcoded and there's one shared team. The My Team page discloses this to visitors before any public deploy.

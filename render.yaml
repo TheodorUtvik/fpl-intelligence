@@ -4,5 +4,5 @@ services:
     runtime: python
     plan: free
     branch: dev
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python scripts/rebuild_from_local_data.py
     startCommand: gunicorn app.app:server --bind 0.0.0.0:$PORT
